@@ -1,3 +1,5 @@
+mod file_watcher;
+
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Query},
     http::StatusCode,
@@ -5,6 +7,7 @@ use axum::{
     routing::get, Json,
     Router,
 };
+use notify::{Watcher, RecursiveMode, Event};
 
 use axum::routing::post;
 use futures::{StreamExt, TryStreamExt};
@@ -17,7 +20,7 @@ use std::{
 };
 use tower_http::cors::{Any, CorsLayer};
 
-const FILE_DIRECTORY: &str = "/home/cherry";
+const FILE_DIRECTORY: &str = "/Users/cherry";
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
 
 #[derive(Deserialize)]
@@ -56,7 +59,8 @@ async fn upload_file(mut multipart: Multipart) -> Result<impl IntoResponse, (Sta
         let file_path = PathBuf::from("./uploads").join(&filename);
 
         // Open file for writing
-        let mut file = fs::File::create(&file_path).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create file: {}", e)))?;
+        let mut file = fs::File::create(&file_path)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create file: {}", e)))?;
 
         // Stream and save file content with size tracking
         let mut stream = field.into_stream();
@@ -89,25 +93,21 @@ async fn upload_file(mut multipart: Multipart) -> Result<impl IntoResponse, (Sta
     Ok((StatusCode::OK, format!("Uploaded files: {:?}", uploaded_files)))
 }
 
-type SearchResult = io::Result<(usize, Option<Vec<(usize, String)>>)>;
 
 // Efficient line counting and searching
-fn count_lines_and_search(reader: &mut impl BufRead, search_term: Option<&str>) -> SearchResult {
-    let mut total_lines = 0;
-    let mut search_results = search_term.map(|_| Vec::new());
-    let search_term = search_term.unwrap().to_lowercase().clone();
+fn search_in_file(reader: &mut impl BufRead, search_term: &str) -> Vec<String> {
+    let mut search_results: Vec<String> = Vec::new();
+    let search_term = search_term.to_lowercase().clone();
 
-    for (line_number, line_result) in reader.by_ref().lines().enumerate() {
-        let line = line_result?;
-        total_lines += 1;
-
+    for line_result in reader.lines(){
         // Search functionality
-        if !&search_term.is_empty() && line.to_lowercase().contains(&search_term) {
-            search_results.as_mut().unwrap().push((line_number + 1, line.clone()));
+        if let Ok(line) = &line_result {
+            if line.to_lowercase().contains(&search_term) {
+                search_results.push(line.clone());
+            }
         }
     }
-
-    Ok((total_lines, search_results))
+    search_results
 }
 
 // Efficient line retrieval
@@ -139,7 +139,7 @@ async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<Json<
     if !file_path.starts_with(FILE_DIRECTORY) {
         return Err((StatusCode::FORBIDDEN, "Invalid file path".to_string()));
     }
-
+    println!("Got file path: {:?}", file_path);
     // Open the file
     let mut file = match fs::File::open(&file_path) {
         Ok(f) => f,
@@ -164,10 +164,14 @@ async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<Json<
         return Err((StatusCode::PAYLOAD_TOO_LARGE, "File too large".to_string()));
     }
 
-    // Count lines and search
+    // search
     let mut reader = BufReader::new(&file);
-    let (total_lines, search_results) = count_lines_and_search(&mut reader, query.search.as_deref())
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if let Some(search_term) = &query.search {
+        let search_results = search_in_file(&mut reader, search_term);
+        return Ok(Json(FileContentResponse { content: search_results }))
+    }
+
+    let total_lines = reader.lines().count();
 
     // Determine start and end lines
     let num_lines = query.num_lines.unwrap_or(100);
@@ -176,19 +180,6 @@ async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<Json<
         let start = line.saturating_sub(1);
         let end = (start + num_lines).min(total_lines);
         (start, end)
-    } else if let Some(results) = &search_results {
-        // If search results exist, default to showing search results
-        if !results.is_empty() {
-            // Get the first few search results
-            let start = results[0].0 - 1;
-            let end = (start + num_lines).min(total_lines);
-            (start, end)
-        } else {
-            // Default to last 100 lines
-            let start = total_lines.saturating_sub(num_lines);
-            let end = total_lines;
-            (start, end)
-        }
     } else {
         // Default to last 100 lines
         let start = total_lines.saturating_sub(num_lines);
@@ -203,19 +194,22 @@ async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<Json<
         num_lines
     ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    if search_results.is_none() {
-        Ok(Json(FileContentResponse { content }))
-    } else {
-        let search_result = search_results.unwrap();
-        let results = search_result.iter().map(|x| x.1.clone()).collect();
-        Ok(Json(FileContentResponse { content: results }))
-    }
+    Ok(Json(FileContentResponse { content }))
+
 }
 
 #[tokio::main]
 async fn main() {
     // Ensure file directory exists
     fs::create_dir_all(FILE_DIRECTORY).expect("Failed to create files directory");
+
+    // Create a channel to receive file system events
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
+        if let Ok(event) = res {
+            tx.send(event).unwrap();
+        }
+    });
 
     // CORS configuration
     let cors = CorsLayer::new()

@@ -12,6 +12,8 @@ tokio = { version = "1.42.0", features = ["rt-multi-thread", "fs"] }
 sanitize-filename = "0.5"
 futures = "0.3.31"
 tokio-util = { version = "0.7.13", features = ["io"] }
+regex = "1.11.1"
+notify = "7.0.0"
 
 [profile.release]
 opt-level = 3
