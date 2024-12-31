@@ -1,20 +1,21 @@
+use axum::routing::post;
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Query},
     http::StatusCode,
     routing::get,
     Json, Router,
 };
-use sqlx::postgres::PgPoolOptions;
-use axum::routing::post;
-use serde::{Deserialize, Serialize};
 use csv::Reader;
+use serde::{Deserialize, Serialize};
+use sqlx::postgres::PgConnectOptions;
+use sqlx::{query, ConnectOptions, Error, Execute, Executor};
+use std::collections::HashMap;
 use std::{
+    env::var,
     fs,
     io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write},
-    path::{Path},
+    path::Path,
 };
-use std::collections::HashMap;
-use sqlx::query;
 use tower_http::cors::{Any, CorsLayer};
 
 const FILE_DIRECTORY: &str = "/home/cherry";
@@ -47,60 +48,93 @@ async fn read_csv(path: &str) -> Vec<HashMap<String, String>> {
         row.insert("sim_serial".to_string(), sim_serial.to_string());
         row.insert("sim_number".to_string(), sim_number.to_string());
         row.insert("qr_code".to_string(), qr_code.to_string());
-        println!("Record: {}, {}, {}, {}", sim_id, sim_serial, sim_number, qr_code);
         data.push(row);
     }
     data
 }
 
-async fn insert(data: Vec<HashMap<String, String>>) -> Result<(), sqlx::Error> {
-    let pool = PgPoolOptions::new()
-        .max_connections(10)
-        .connect("postgres://postgres:password@localhost/test").await?;
-    for d in data {
-        query("INSERT INTO ").execute(&pool).await?;
+async fn insert(data: &Vec<HashMap<String, String>>, provider: &str) -> Result<(), Error> {
+    if var("POSTGRES_HOST").is_ok() {
+        let host = var("POSTGRES_HOST").unwrap();
+        let user = var("POSTGRES_USER").unwrap();
+        let db = var("POSTGRES_DB").unwrap();
+        let password = var("POSTGRES_PASSWORD").unwrap();
+        let mut conn = PgConnectOptions::new()
+            .host(host.as_str())
+            .database(db.as_str())
+            .username(user.as_str())
+            .password(password.as_str())
+            .connect()
+            .await?;
+
+        for d in data {
+            let q = query("insert into api_simidmapper(imsi, iccid, msisdn, esim, provider, qr_code, active, updated, joytel_pin, assigned, synced)\
+             values (?, ?, ?, true, ?, ?, true, now(), '', false, false);").bind(d.get("sim_id").unwrap())
+                .bind(d.get("sim_serial").unwrap())
+                .bind(d.get("sim_number").unwrap())
+                .bind(provider);
+            println!("SQL: {:?}", q.sql());
+            match conn.execute(q).await {
+                Ok(a) => {
+                    println!("{:?}", a)
+                }
+                Err(err) => {
+                    println!("{:?}", err)
+                }
+            }
+        }
+        Ok(())
+    } else {
+        Err(Error::ColumnNotFound("Error".to_string()))
     }
-    Ok(())
 }
 
 // Handler for file upload
 async fn upload(mut multipart: Multipart) -> Result<(StatusCode, String), (StatusCode, String)> {
-    fs::create_dir_all("./uploads")
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to create upload directory: {}", e)
-            )
-        })?;
+    fs::create_dir_all("./uploads").map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to create upload directory: {}", e),
+        )
+    })?;
+
+    let mut data: Vec<HashMap<String, String>> = Vec::new();
+    let mut provider = "roaming".to_string();
 
     while let Some(mut field) = multipart
         .next_field()
         .await
         .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
     {
-        let Some(filename) = field.file_name().map(sanitize_filename::sanitize) else {
-            continue; // Skip fields without filenames
-        };
-        let mut file = fs::File::create(format!("./uploads/{}", filename)).unwrap();
-        let file_path = format!("./uploads/{}", filename);
-        while let Some(chunk) = field
-            .chunk()
-            .await
-            .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
-        {
-            println!("received {} bytes", chunk.len());
-            file.write_all(&chunk).unwrap();
-        }
-        file.flush().unwrap();
-        let data = read_csv(&file_path).await;
-        insert(data).await;
-    }
-    Ok((
-        StatusCode::OK,
-        "Uploaded".to_string(),
-    ))
-}
+        println!("received field: {:?}", field.name());
+        if field.name() == Some("provider") {
+            provider = field.text().await.unwrap().to_string();
+            println!("provider: {}", provider);
+        } else {
+            let Some(filename) = field.file_name().map(sanitize_filename::sanitize) else {
+                println!("no filename");
+                continue;
+            };
+            let mut file = fs::File::create(format!("./uploads/{}", filename)).unwrap();
+            let file_path = format!("./uploads/{}", filename);
 
+            while let Some(chunk) = field
+                .chunk()
+                .await
+                .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
+            {
+                println!("received {} bytes", chunk.len());
+                file.write_all(&chunk).unwrap();
+            }
+            file.flush().unwrap();
+            data = read_csv(&file_path).await;
+        }
+        insert(&data, provider.as_str())
+            .await
+            .expect("Failed to insert data");
+    }
+    Ok((StatusCode::OK, "Uploaded".to_string()))
+}
 
 type SearchResult = io::Result<(usize, Option<Vec<(usize, String)>>)>;
 
@@ -143,8 +177,6 @@ fn read_lines_range(
     // Read specified number of lines
     reader.by_ref().lines().take(num_lines).collect()
 }
-
-
 
 async fn get_file_content(
     Query(query): Query<FileContentQuery>,
