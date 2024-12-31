@@ -1,20 +1,20 @@
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Query},
     http::StatusCode,
-    response::IntoResponse,
-    routing::get, Json,
-    Router,
+    routing::get,
+    Json, Router,
 };
-
+use sqlx::postgres::PgPoolOptions;
 use axum::routing::post;
-use futures::{StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
-use std::io::Write;
+use csv::Reader;
 use std::{
     fs,
-    io::{self, BufRead, BufReader, Read, Seek, SeekFrom},
-    path::{Path, PathBuf}
+    io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write},
+    path::{Path},
 };
+use std::collections::HashMap;
+use sqlx::query;
 use tower_http::cors::{Any, CorsLayer};
 
 const FILE_DIRECTORY: &str = "/home/cherry";
@@ -33,61 +33,74 @@ struct FileContentResponse {
     content: Vec<String>,
 }
 
+async fn read_csv(path: &str) -> Vec<HashMap<String, String>> {
+    let mut data: Vec<HashMap<String, String>> = Vec::new();
+    let mut rdr = Reader::from_path(path).unwrap();
+    for result in rdr.records() {
+        let mut row: HashMap<String, String> = HashMap::new();
+        let record = result.unwrap();
+        let sim_id = record[0].trim();
+        let sim_serial = record[1].trim();
+        let sim_number = record[2].trim();
+        let qr_code = record[5].trim();
+        row.insert("sim_id".to_string(), sim_id.to_string());
+        row.insert("sim_serial".to_string(), sim_serial.to_string());
+        row.insert("sim_number".to_string(), sim_number.to_string());
+        row.insert("qr_code".to_string(), qr_code.to_string());
+        println!("Record: {}, {}, {}, {}", sim_id, sim_serial, sim_number, qr_code);
+        data.push(row);
+    }
+    data
+}
 
+async fn insert(data: Vec<HashMap<String, String>>) -> Result<(), sqlx::Error> {
+    let pool = PgPoolOptions::new()
+        .max_connections(10)
+        .connect("postgres://postgres:password@localhost/test").await?;
+    for d in data {
+        query("INSERT INTO ").execute(&pool).await?;
+    }
+    Ok(())
+}
 
 // Handler for file upload
-async fn upload_file(mut multipart: Multipart) -> Result<impl IntoResponse, (StatusCode, String)> {
-    // Ensure upload directory exists
+async fn upload(mut multipart: Multipart) -> Result<(StatusCode, String), (StatusCode, String)> {
     fs::create_dir_all("./uploads")
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create upload directory: {}", e)))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to create upload directory: {}", e)
+            )
+        })?;
 
-    let mut uploaded_files = Vec::new();
-
-    // Process each field in the multipart form
-    while let Some(field) = multipart.next_field().await
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Multipart error: {}", e)))?
+    while let Some(mut field) = multipart
+        .next_field()
+        .await
+        .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
     {
-        // Get filename, using sanitization
         let Some(filename) = field.file_name().map(sanitize_filename::sanitize) else {
             continue; // Skip fields without filenames
         };
-
-        // Construct full file path
-        let file_path = PathBuf::from("./uploads").join(&filename);
-
-        // Open file for writing
-        let mut file = fs::File::create(&file_path).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create file: {}", e)))?;
-
-        // Stream and save file content with size tracking
-        let mut stream = field.into_stream();
-        let mut total_size = 0;
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Error reading file chunk: {}", e)))?;
-
-            // Check file size
-            total_size += chunk.len();
-            if total_size > 10 * 1024 * 1024 { // 10 MB limit
-                return Err((
-                    StatusCode::PAYLOAD_TOO_LARGE,
-                    format!("File {} exceeds maximum size of 10MB", filename)
-                ));
-            }
-
-            // Write chunk to file
-            file.write_all(&chunk).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write file chunk: {}", e)))?;
+        let mut file = fs::File::create(format!("./uploads/{}", filename)).unwrap();
+        let file_path = format!("./uploads/{}", filename);
+        while let Some(chunk) = field
+            .chunk()
+            .await
+            .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
+        {
+            println!("received {} bytes", chunk.len());
+            file.write_all(&chunk).unwrap();
         }
-
-        // Close the file
-        file.flush().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to flush file: {}", e)))?;
-
-        uploaded_files.push(filename);
+        file.flush().unwrap();
+        let data = read_csv(&file_path).await;
+        insert(data).await;
     }
-
-    // Respond with uploaded file names
-    Ok((StatusCode::OK, format!("Uploaded files: {:?}", uploaded_files)))
+    Ok((
+        StatusCode::OK,
+        "Uploaded".to_string(),
+    ))
 }
+
 
 type SearchResult = io::Result<(usize, Option<Vec<(usize, String)>>)>;
 
@@ -103,7 +116,10 @@ fn count_lines_and_search(reader: &mut impl BufRead, search_term: Option<&str>) 
 
         // Search functionality
         if !&search_term.is_empty() && line.to_lowercase().contains(&search_term) {
-            search_results.as_mut().unwrap().push((line_number + 1, line.clone()));
+            search_results
+                .as_mut()
+                .unwrap()
+                .push((line_number + 1, line.clone()));
         }
     }
 
@@ -114,7 +130,7 @@ fn count_lines_and_search(reader: &mut impl BufRead, search_term: Option<&str>) 
 fn read_lines_range(
     file: &mut fs::File,
     start_line: usize,
-    num_lines: usize
+    num_lines: usize,
 ) -> io::Result<Vec<String>> {
     file.seek(SeekFrom::Start(0))?;
     let mut reader = BufReader::new(file);
@@ -125,13 +141,14 @@ fn read_lines_range(
     }
 
     // Read specified number of lines
-    reader.by_ref()
-          .lines()
-          .take(num_lines)
-          .collect()
+    reader.by_ref().lines().take(num_lines).collect()
 }
 
-async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<Json<FileContentResponse>, (StatusCode, String)> {
+
+
+async fn get_file_content(
+    Query(query): Query<FileContentQuery>,
+) -> Result<Json<FileContentResponse>, (StatusCode, String)> {
     // Validate and sanitize file path
     let file_path = Path::new(FILE_DIRECTORY).join(&query.file_name);
 
@@ -145,19 +162,29 @@ async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<Json<
         Ok(f) => f,
         Err(e) => {
             return match e.kind() {
-                io::ErrorKind::NotFound =>
-                    Err((StatusCode::NOT_FOUND, "File not found".to_string())),
-                io::ErrorKind::PermissionDenied =>
-                    Err((StatusCode::FORBIDDEN, "Permission denied".to_string())),
-                _ =>
-                    Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Error opening file: {}", e)))
+                io::ErrorKind::NotFound => {
+                    Err((StatusCode::NOT_FOUND, "File not found".to_string()))
+                }
+                io::ErrorKind::PermissionDenied => {
+                    Err((StatusCode::FORBIDDEN, "Permission denied".to_string()))
+                }
+                _ => Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Error opening file: {}", e),
+                )),
             };
         }
     };
 
     // Check file size
-    let file_size = file.metadata()
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Could not read file metadata".to_string()))?
+    let file_size = file
+        .metadata()
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Could not read file metadata".to_string(),
+            )
+        })?
         .len();
 
     if file_size > MAX_FILE_SIZE {
@@ -166,8 +193,9 @@ async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<Json<
 
     // Count lines and search
     let mut reader = BufReader::new(&file);
-    let (total_lines, search_results) = count_lines_and_search(&mut reader, query.search.as_deref())
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let (total_lines, search_results) =
+        count_lines_and_search(&mut reader, query.search.as_deref())
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // Determine start and end lines
     let num_lines = query.num_lines.unwrap_or(100);
@@ -197,11 +225,8 @@ async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<Json<
     };
 
     // Read specific lines range
-    let content = read_lines_range(
-        &mut file,
-        start_line,
-        num_lines
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let content = read_lines_range(&mut file, start_line, num_lines)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     if search_results.is_none() {
         Ok(Json(FileContentResponse { content }))
@@ -225,7 +250,7 @@ async fn main() {
 
     // Build our application with routes
     let app = Router::new()
-        .route("/upload", post(upload_file))
+        .route("/upload", post(upload))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 10 MB max request size
         .route("/api/file", get(get_file_content))
         .layer(cors);

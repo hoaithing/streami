@@ -9,9 +9,9 @@ axum = { version = "0.8.0-alpha.1", features = ["multipart"] }
 http = "1.2.0"
 tower-http = { version = "0.6.2", features = ["cors"] }
 tokio = { version = "1.42.0", features = ["rt-multi-thread", "fs"] }
-sanitize-filename = "0.5"
-futures = "0.3.31"
-tokio-util = { version = "0.7.13", features = ["io"] }
+sanitize-filename = "0.6.0"
+csv = "1.3.1"
+sqlx = { version = "0.8.2", features = ["chrono", "postgres"] }
 
 [profile.release]
 opt-level = 3
