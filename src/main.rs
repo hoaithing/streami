@@ -8,8 +8,9 @@ use axum::{
 use csv::Reader;
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgConnectOptions;
-use sqlx::{query, ConnectOptions, Error, Execute, Executor};
+use sqlx::{query, ConnectOptions, Error};
 use std::collections::HashMap;
+use std::time::Duration;
 use std::{
     env::var,
     fs,
@@ -54,34 +55,36 @@ async fn read_csv(path: &str) -> Vec<HashMap<String, String>> {
 }
 
 async fn insert(data: &Vec<HashMap<String, String>>, provider: &str) -> Result<(), Error> {
+    println!("{:?}", data);
     if var("POSTGRES_HOST").is_ok() {
         let host = var("POSTGRES_HOST").unwrap();
         let user = var("POSTGRES_USER").unwrap();
         let db = var("POSTGRES_DB").unwrap();
         let password = var("POSTGRES_PASSWORD").unwrap();
-        let mut conn = PgConnectOptions::new()
+        let conn = PgConnectOptions::new()
             .host(host.as_str())
             .database(db.as_str())
             .username(user.as_str())
-            .password(password.as_str())
-            .connect()
-            .await?;
+            .password(password.as_str());
+
+        // Advanced configuration using ConnectOptions trait
+        let configured_options = conn
+            .application_name("my_application")
+            .statement_cache_capacity(512)
+            .log_statements(log::LevelFilter::Debug)
+            .log_slow_statements(log::LevelFilter::Warn, Duration::from_secs(1));
+
+        let pool = sqlx::PgPool::connect_with(configured_options).await?;
 
         for d in data {
             let q = query("insert into api_simidmapper(imsi, iccid, msisdn, esim, provider, qr_code, active, updated, joytel_pin, assigned, synced)\
-             values (?, ?, ?, true, ?, ?, true, now(), '', false, false);").bind(d.get("sim_id").unwrap())
-                .bind(d.get("sim_serial").unwrap())
-                .bind(d.get("sim_number").unwrap())
-                .bind(provider);
-            println!("SQL: {:?}", q.sql());
-            match conn.execute(q).await {
-                Ok(a) => {
-                    println!("{:?}", a)
-                }
-                Err(err) => {
-                    println!("{:?}", err)
-                }
-            }
+            values (?, ?, ?, true, ?, ?, true, now(), '', false, false);")
+               .bind(d.get("sim_id").unwrap())
+               .bind(d.get("sim_serial").unwrap())
+               .bind(d.get("sim_number").unwrap())
+               .bind(provider)
+               .execute(&pool).await;
+            println!("result q: {:?}", q);
         }
         Ok(())
     } else {
@@ -98,8 +101,8 @@ async fn upload(mut multipart: Multipart) -> Result<(StatusCode, String), (Statu
         )
     })?;
 
-    let mut data: Vec<HashMap<String, String>> = Vec::new();
     let mut provider = "roaming".to_string();
+    let mut file_path = "".to_string();
 
     while let Some(mut field) = multipart
         .next_field()
@@ -111,13 +114,14 @@ async fn upload(mut multipart: Multipart) -> Result<(StatusCode, String), (Statu
             provider = field.text().await.unwrap().to_string();
             println!("provider: {}", provider);
         } else {
+            println!("filename: {:?}", field.file_name());
             let Some(filename) = field.file_name().map(sanitize_filename::sanitize) else {
                 println!("no filename");
                 continue;
             };
             let mut file = fs::File::create(format!("./uploads/{}", filename)).unwrap();
-            let file_path = format!("./uploads/{}", filename);
-
+            println!("filename: {}", filename);
+            file_path = format!("./uploads/{}", filename);
             while let Some(chunk) = field
                 .chunk()
                 .await
@@ -127,12 +131,13 @@ async fn upload(mut multipart: Multipart) -> Result<(StatusCode, String), (Statu
                 file.write_all(&chunk).unwrap();
             }
             file.flush().unwrap();
-            data = read_csv(&file_path).await;
         }
-        insert(&data, provider.as_str())
-            .await
-            .expect("Failed to insert data");
     }
+    println!("file_path: {}", file_path);
+    let data = read_csv(&file_path).await;
+    insert(&data, provider.as_str())
+        .await
+        .expect("TODO: panic message");
     Ok((StatusCode::OK, "Uploaded".to_string()))
 }
 
