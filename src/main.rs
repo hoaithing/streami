@@ -165,11 +165,7 @@ fn count_lines_and_search(reader: &mut impl BufRead, search_term: Option<&str>) 
 }
 
 // Efficient line retrieval
-fn read_lines_range(
-    file: &mut fs::File,
-    start_line: usize,
-    num_lines: usize,
-) -> io::Result<Vec<String>> {
+fn read_lines_range(file: &mut fs::File, start_line: usize, num_lines: usize) -> io::Result<Vec<String>> {
     file.seek(SeekFrom::Start(0))?;
     let mut reader = BufReader::new(file);
 
