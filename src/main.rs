@@ -19,7 +19,6 @@ use std::{
 };
 use tower_http::cors::{Any, CorsLayer};
 
-const FILE_DIRECTORY: &str = "/home/cherry";
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
 
 #[derive(Deserialize)]
@@ -187,10 +186,11 @@ async fn get_file_content(
     Query(query): Query<FileContentQuery>,
 ) -> Result<Json<FileContentResponse>, (StatusCode, String)> {
     // Validate and sanitize file path
-    let file_path = Path::new(FILE_DIRECTORY).join(&query.file_name);
+    let file_directory = var("FILE_DIRECTORY").unwrap();
+    let file_path = Path::new(file_directory.as_str()).join(&query.file_name);
 
     // Prevent directory traversal
-    if !file_path.starts_with(FILE_DIRECTORY) {
+    if !file_path.starts_with(file_directory.as_str()) {
         return Err((StatusCode::FORBIDDEN, "Invalid file path".to_string()));
     }
 
@@ -276,9 +276,6 @@ async fn get_file_content(
 
 #[tokio::main]
 async fn main() {
-    // Ensure file directory exists
-    fs::create_dir_all(FILE_DIRECTORY).expect("Failed to create files directory");
-
     // CORS configuration
     let cors = CorsLayer::new()
         .allow_origin(Any)
