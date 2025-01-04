@@ -1,3 +1,5 @@
+mod schema;
+
 use axum::routing::post;
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Query},
@@ -7,12 +9,8 @@ use axum::{
 };
 use csv::Reader;
 use serde::{Deserialize, Serialize};
-use sqlx::postgres::PgConnectOptions;
-use sqlx::{query, ConnectOptions, Error};
 use std::collections::HashMap;
-use std::time::Duration;
 use std::{
-    env::var,
     fs,
     io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write},
     path::Path,
@@ -53,42 +51,9 @@ async fn read_csv(path: &str) -> Vec<HashMap<String, String>> {
     data
 }
 
-async fn insert(data: &Vec<HashMap<String, String>>, provider: &str) -> Result<(), Error> {
+async fn insert(data: &Vec<HashMap<String, String>>, provider: &str) -> Result<(), ()> {
     println!("{:?}", data);
-    if var("POSTGRES_HOST").is_ok() {
-        let host = var("POSTGRES_HOST").unwrap();
-        let user = var("POSTGRES_USER").unwrap();
-        let db = var("POSTGRES_DB").unwrap();
-        let password = var("POSTGRES_PASSWORD").unwrap();
-        let conn = PgConnectOptions::new()
-            .host(host.as_str())
-            .database(db.as_str())
-            .username(user.as_str())
-            .password(password.as_str());
-
-        // Advanced configuration using ConnectOptions trait
-        let configured_options = conn
-            .application_name("my_application")
-            .statement_cache_capacity(512)
-            .log_statements(log::LevelFilter::Debug)
-            .log_slow_statements(log::LevelFilter::Warn, Duration::from_secs(1));
-
-        let pool = sqlx::PgPool::connect_with(configured_options).await?;
-
-        for d in data {
-            let q = query("insert into api_simidmapper(imsi, iccid, msisdn, esim, provider, qr_code, active, updated, joytel_pin, assigned, synced)\
-            values (?, ?, ?, true, ?, ?, true, now(), '', false, false);")
-               .bind(d.get("sim_id").unwrap())
-               .bind(d.get("sim_serial").unwrap())
-               .bind(d.get("sim_number").unwrap())
-               .bind(provider)
-               .execute(&pool).await;
-            println!("result q: {:?}", q);
-        }
-        Ok(())
-    } else {
-        Err(Error::ColumnNotFound("Error".to_string()))
-    }
+    Ok(())
 }
 
 // Handler for file upload
@@ -108,18 +73,13 @@ async fn upload(mut multipart: Multipart) -> Result<(StatusCode, String), (Statu
         .await
         .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
     {
-        println!("received field: {:?}", field.name());
         if field.name() == Some("provider") {
             provider = field.text().await.unwrap().to_string();
-            println!("provider: {}", provider);
         } else {
-            println!("filename: {:?}", field.file_name());
             let Some(filename) = field.file_name().map(sanitize_filename::sanitize) else {
-                println!("no filename");
                 continue;
             };
             let mut file = fs::File::create(format!("./uploads/{}", filename)).unwrap();
-            println!("filename: {}", filename);
             file_path = format!("./uploads/{}", filename);
             while let Some(chunk) = field
                 .chunk()
@@ -165,7 +125,11 @@ fn count_lines_and_search(reader: &mut impl BufRead, search_term: Option<&str>) 
 }
 
 // Efficient line retrieval
-fn read_lines_range(file: &mut fs::File, start_line: usize, num_lines: usize) -> io::Result<Vec<String>> {
+fn read_lines_range(
+    file: &mut fs::File,
+    start_line: usize,
+    num_lines: usize,
+) -> io::Result<Vec<String>> {
     file.seek(SeekFrom::Start(0))?;
     let mut reader = BufReader::new(file);
 
@@ -182,11 +146,11 @@ async fn get_file_content(
     Query(query): Query<FileContentQuery>,
 ) -> Result<Json<FileContentResponse>, (StatusCode, String)> {
     // Validate and sanitize file path
-    let file_directory = var("FILE_DIRECTORY").unwrap();
-    let file_path = Path::new(file_directory.as_str()).join(&query.file_name);
+    let file_directory = ".";
+    let file_path = Path::new(file_directory).join(&query.file_name);
 
     // Prevent directory traversal
-    if !file_path.starts_with(file_directory.as_str()) {
+    if !file_path.starts_with(file_directory) {
         return Err((StatusCode::FORBIDDEN, "Invalid file path".to_string()));
     }
 
