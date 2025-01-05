@@ -16,8 +16,27 @@ use std::{
     path::Path,
 };
 use tower_http::cors::{Any, CorsLayer};
+use streami::get_sims;
+use streami::models::Sim;
 
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
+
+
+#[derive(Deserialize)]
+struct Pagination {
+    page: usize,
+    page_size: usize,
+}
+
+
+impl Default for Pagination {
+    fn default() -> Self {
+        Self {
+            page: 1,
+            page_size: 50,
+        }
+    }
+}
 
 #[derive(Deserialize)]
 struct FileContentQuery {
@@ -31,6 +50,15 @@ struct FileContentQuery {
 struct FileContentResponse {
     content: Vec<String>,
 }
+
+
+#[derive(Serialize)]
+struct SimResponse {
+    total: i64,
+    page: i64,
+    data: Vec<Sim>
+}
+
 
 async fn read_csv(path: &str) -> Vec<HashMap<String, String>> {
     let mut data: Vec<HashMap<String, String>> = Vec::new();
@@ -234,6 +262,12 @@ async fn get_file_content(
     }
 }
 
+async fn list_sims(Query(pagination): Query<Pagination>,) -> Result<Json<SimResponse>, (StatusCode, String)> {
+    let res = get_sims(pagination.page as i64, pagination.page_size as i64).expect("TODO: panic message");
+    let total = &res.len();
+    Ok(Json(SimResponse { data: res, page: pagination.page as i64, total: *total as i64 }))
+}
+
 #[tokio::main]
 async fn main() {
     // CORS configuration
@@ -245,8 +279,9 @@ async fn main() {
     // Build our application with routes
     let app = Router::new()
         .route("/upload", post(upload))
-        .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 10 MB max request size
+        .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .route("/api/file", get(get_file_content))
+        .route("/api/sims", get(list_sims))
         .layer(cors);
 
     // Run it with hyper on localhost:8080

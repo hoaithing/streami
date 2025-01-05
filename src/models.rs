@@ -2,7 +2,7 @@
 
 #![allow(unused)]
 #![allow(clippy::all)]
-use diesel::{Identifiable, Queryable, Selectable};
+use diesel::{Identifiable, Selectable, Queryable};
 use chrono::NaiveDate;
 use chrono::NaiveDateTime;
 use chrono::NaiveTime;
@@ -10,9 +10,9 @@ use bigdecimal::BigDecimal;
 use uuid::Uuid;
 use chrono::DateTime;
 use chrono::offset::Utc;
+use serde::{Deserialize, Serialize};
 
-
-#[derive(Selectable, Debug, Identifiable)]
+#[derive(Selectable, Queryable, Debug, Identifiable)]
 #[diesel(table_name = crate::schema::api_prices)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Price {
@@ -34,7 +34,7 @@ pub struct Price {
     pub additional_credit: Option<f64>,
 }
 
-#[derive(Selectable, Debug, Identifiable)]
+#[derive(Selectable, Queryable, Debug, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = crate::schema::api_sim)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Sim {
@@ -65,7 +65,7 @@ pub struct Sim {
     pub sent_email: bool,
 }
 
-#[derive(Selectable, Debug, Identifiable)]
+#[derive(Selectable, Queryable, Debug, Identifiable)]
 #[diesel(table_name = crate::schema::api_simidmapper)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Simidmapper {
@@ -89,7 +89,7 @@ pub struct Simidmapper {
     pub sent_date: Option<DateTime<Utc>>,
 }
 
-#[derive(Selectable, Debug, Identifiable)]
+#[derive(Selectable, Queryable, Debug, Identifiable)]
 #[diesel(table_name = crate::schema::api_simidmapper_products)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct SimidmapperProduct {
@@ -98,7 +98,7 @@ pub struct SimidmapperProduct {
     pub product_id: i32,
 }
 
-#[derive(Selectable, Debug, Identifiable)]
+#[derive(Selectable, Queryable, Debug, Identifiable)]
 #[diesel(table_name = crate::schema::email_message)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct EmailMessage {
@@ -114,7 +114,7 @@ pub struct EmailMessage {
     pub created: Option<DateTime<Utc>>,
 }
 
-#[derive(Selectable, Debug, Identifiable)]
+#[derive(Selectable, Queryable, Debug, Identifiable)]
 #[diesel(table_name = crate::schema::get_sim_rules)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct GetSimRule {
@@ -125,7 +125,7 @@ pub struct GetSimRule {
 }
 
 
-#[derive(Selectable, Debug, Identifiable)]
+#[derive(Selectable, Queryable, Debug, Identifiable)]
 #[diesel(table_name = crate::schema::shop_module_fuppackage)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Fuppackage {
@@ -145,7 +145,7 @@ pub struct Fuppackage {
     pub sim_rule: Option<String>,
 }
 
-#[derive(Selectable, Debug, Identifiable)]
+#[derive(Selectable, Queryable, Debug, Identifiable)]
 #[diesel(table_name = crate::schema::shop_module_order)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Order {
@@ -175,7 +175,7 @@ pub struct Order {
     pub payment: serde_json::Value,
 }
 
-#[derive(Selectable, Debug, Identifiable)]
+#[derive(Selectable, Queryable, Debug, Identifiable)]
 #[diesel(table_name = crate::schema::shop_module_package)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Package {
@@ -192,7 +192,7 @@ pub struct Package {
     pub mb: i32,
 }
 
-#[derive(Selectable, Debug, Identifiable)]
+#[derive(Selectable, Queryable, Debug, Identifiable)]
 #[diesel(table_name = crate::schema::shop_module_product)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Product {
@@ -241,7 +241,7 @@ pub struct Product {
     pub calculate_mb: i32,
 }
 
-#[derive(Selectable, Debug, Identifiable)]
+#[derive(Selectable, Queryable, Debug, Identifiable)]
 #[diesel(table_name = crate::schema::shop_module_salepartner)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Salepartner {
@@ -284,7 +284,7 @@ pub struct Salepartner {
     pub buyer_country: Option<String>,
 }
 
-#[derive(Selectable, Debug, Identifiable)]
+#[derive(Selectable, Queryable, Debug, Identifiable)]
 #[diesel(primary_key(value))]
 #[diesel(table_name = crate::schema::shop_module_status)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
@@ -297,7 +297,7 @@ pub struct Status {
     pub order_index: Option<i32>,
 }
 
-#[derive(Selectable, Debug, Identifiable)]
+#[derive(Selectable, Queryable, Debug, Identifiable)]
 #[diesel(table_name = crate::schema::shop_module_transaction)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Transaction {
@@ -312,7 +312,7 @@ pub struct Transaction {
     pub user_id: Option<i32>,
 }
 
-#[derive(Selectable, Debug, Identifiable)]
+#[derive(Selectable, Queryable, Debug, Identifiable)]
 #[diesel(table_name = crate::schema::sim_package)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct SimPackage {
@@ -339,7 +339,7 @@ pub struct SimPackage {
     pub sent: bool,
 }
 
-#[derive(Selectable, Debug, Identifiable)]
+#[derive(Selectable, Queryable, Debug, Identifiable)]
 #[diesel(primary_key(request_id))]
 #[diesel(table_name = crate::schema::zoho_email)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
