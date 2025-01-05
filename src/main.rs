@@ -9,14 +9,13 @@ use axum::{
 };
 use csv::Reader;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::{
     fs,
     io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write},
     path::Path,
 };
 use tower_http::cors::{Any, CorsLayer};
-use streami::get_sims;
+use streami::{add_sim_mapper, get_sims};
 use streami::models::Sim;
 
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
@@ -60,29 +59,23 @@ struct SimResponse {
 }
 
 
-async fn read_csv(path: &str) -> Vec<HashMap<String, String>> {
-    let mut data: Vec<HashMap<String, String>> = Vec::new();
+fn read_then_import(path: &str, provider: String){
     let mut rdr = Reader::from_path(path).unwrap();
     for result in rdr.records() {
-        let mut row: HashMap<String, String> = HashMap::new();
         let record = result.unwrap();
         let sim_id = record[0].trim();
         let sim_serial = record[1].trim();
         let sim_number = record[2].trim();
         let qr_code = record[5].trim();
-        row.insert("sim_id".to_string(), sim_id.to_string());
-        row.insert("sim_serial".to_string(), sim_serial.to_string());
-        row.insert("sim_number".to_string(), sim_number.to_string());
-        row.insert("qr_code".to_string(), qr_code.to_string());
-        data.push(row);
+        add_sim_mapper(sim_id.to_string(),
+                       sim_serial.to_string(),
+                       sim_number.to_string(),
+                       qr_code.to_string(),
+                       true,
+                       provider.as_str());
     }
-    data
 }
 
-async fn insert(data: &Vec<HashMap<String, String>>, provider: &str) -> Result<(), ()> {
-    println!("{:?}", data);
-    Ok(())
-}
 
 // Handler for file upload
 async fn upload(mut multipart: Multipart) -> Result<(StatusCode, String), (StatusCode, String)> {
@@ -121,10 +114,7 @@ async fn upload(mut multipart: Multipart) -> Result<(StatusCode, String), (Statu
         }
     }
     println!("file_path: {}", file_path);
-    let data = read_csv(&file_path).await;
-    insert(&data, provider.as_str())
-        .await
-        .expect("TODO: panic message");
+    read_then_import(&file_path, provider);
     Ok((StatusCode::OK, "Uploaded".to_string()))
 }
 
