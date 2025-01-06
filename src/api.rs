@@ -8,7 +8,7 @@ pub async fn list_sims(
     let res = get_sims(query.page, query.page_size, query.provider, query.search).expect("TODO: panic message");
     let total = &res.len();
     Ok(Json(SimResponse {
-        count: total.clone() as i64,
+        count: *total as i64,
         next: "",
         prev: None,
         results: res,

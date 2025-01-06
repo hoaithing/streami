@@ -1,5 +1,3 @@
-mod schema;
-
 use axum::routing::post;
 use axum::{
     extract::DefaultBodyLimit,

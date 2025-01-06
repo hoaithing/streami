@@ -33,8 +33,7 @@ pub fn get_sims(
         search,
         provider,
     };
-    let res = query.execute(conn);
-    res
+    query.execute(conn)
 }
 
 pub fn add_sim_mapper(
