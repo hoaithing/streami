@@ -1,19 +1,44 @@
-use std::io;
-use serde::{Deserialize, Serialize};
 use crate::models::Sim;
+use crate::schema::api_sim;
+use diesel::pg::Pg;
+use diesel::prelude::*;
+use serde::{Deserialize, Serialize};
+use std::io;
 
-#[derive(Deserialize)]
-pub struct Pagination {
-    pub page: usize,
-    pub page_size: usize,
+pub struct SimQuery {
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
+    pub search: Option<&'static str>,
+    pub provider: Option<&'static str>,
 }
 
-impl Default for Pagination {
-    fn default() -> Self {
-        Self {
-            page: 1,
-            page_size: 50,
+impl SimQuery {
+    fn apply_query<'a>(&self, query: api_sim::BoxedQuery<'a, Pg>) -> api_sim::BoxedQuery<'a, Pg> {
+        let mut query = query;
+
+        let page_size = self.page_size.unwrap_or(10);
+        query = query
+            .offset((self.page_size.unwrap_or(1) - 1) * page_size)
+            .limit(page_size);
+
+        if let Some(provider) = self.provider {
+            query = query.filter(api_sim::provider.eq(provider));
         }
+
+        if let Some(search) = self.search {
+            let pattern = format!("%{}%", search);
+            query = query.filter(
+                api_sim::sim_id
+                    .ilike(pattern.clone())
+                    .or(api_sim::sim_serial.ilike(pattern.clone())),
+            );
+        }
+        query
+    }
+
+    pub fn execute(&self, conn: &mut PgConnection) -> QueryResult<Vec<Sim>> {
+        let query = api_sim::table.into_boxed::<Pg>();
+        self.apply_query(query).load::<Sim>(conn)
     }
 }
 
@@ -30,13 +55,12 @@ pub struct FileContentResponse {
     pub content: Vec<String>,
 }
 
-
 #[derive(Serialize)]
 pub struct SimResponse {
     pub count: i64,
     pub next: &'static str,
     pub prev: Option<&'static str>,
-    pub results: Vec<Sim>
+    pub results: Vec<Sim>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -823,6 +823,7 @@ dependencies = [
  "csv",
  "diesel",
  "http",
+ "regex",
  "sanitize-filename",
  "serde",
  "serde_json",

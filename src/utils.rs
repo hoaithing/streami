@@ -1,18 +1,16 @@
-use crate::schema::api_sim::dsl::api_sim;
-use diesel::prelude::*;
-use diesel::{Connection, PgConnection};
-use std::{env, fs, io};
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use crate::models::{Sim, SimMapper, SimMapperInsert};
+use crate::schema::api_simidmapper;
+use crate::serializers::*;
 use axum::extract::{Multipart, Query};
 use axum::Json;
 use chrono::prelude::*;
 use csv::Reader;
+use diesel::prelude::*;
+use diesel::{Connection, PgConnection};
 use http::StatusCode;
-use crate::models::{SimMapper, Sim, SimMapperInsert};
-use crate::schema::api_simidmapper;
-use crate::serializers::*;
-
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::path::Path;
+use std::{env, fs, io};
 
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
 
@@ -22,36 +20,41 @@ pub fn establish_connection() -> PgConnection {
         .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
 }
 
-pub fn get_sims(page: i64, page_size: i64) -> Result<Vec<Sim>, diesel::result::Error> {
+pub fn get_sims(
+    page: Option<i64>,
+    page_size: Option<i64>,
+    provider: Option<&'static str>,
+    search: Option<&'static str>,
+) -> QueryResult<Vec<Sim>> {
     let conn = &mut establish_connection();
-    let offset = (page - 1) * page_size;
-    let res: Vec<Sim> = api_sim
-        .offset(offset)
-        .limit(page_size)
-        .select(Sim::as_select())
-        .load(conn)
-        .expect("Error loading posts");
-    Ok(res)
+    let query = SimQuery {
+        page,
+        page_size,
+        search,
+        provider,
+    };
+    let res = query.execute(conn);
+    res
 }
 
 pub fn add_sim_mapper(
-    imsi: String,
-    iccid: &String,
-    msisdn: String,
-    qr_code: String,
+    imsi: &str,
+    iccid: &str,
+    msisdn: &str,
+    qr_code: &str,
     esim: bool,
-    provider: &String,
+    provider: &str,
 ) -> QueryResult<SimMapper> {
     let conn = &mut establish_connection();
     let new_sim = SimMapperInsert {
-        imsi,
-        iccid: iccid.clone(),
+        imsi: imsi.to_owned(),
+        iccid: iccid.to_owned(),
         esim,
-        provider: provider.clone(),
-        qr_code: Some(qr_code),
+        provider: provider.to_owned(),
+        qr_code: Some(qr_code.to_owned()),
         synced: false,
         last_email: None,
-        msisdn: Some(msisdn),
+        msisdn: Some(msisdn.to_owned()),
         active: false,
         booking_id: None,
         created: Some(Utc::now()),
@@ -64,9 +67,7 @@ pub fn add_sim_mapper(
         .values(&new_sim)
         .returning(SimMapper::as_returning())
         .get_result(conn)
-
 }
-
 
 pub async fn get_file_content(
     Query(query): Query<FileContentQuery>,
@@ -160,8 +161,7 @@ pub async fn get_file_content(
     }
 }
 
-
-pub fn read_then_import(path: &str, provider: String) {
+pub fn read_then_import(path: &str, provider: &str) {
     let mut rdr = Reader::from_path(path).unwrap();
     for result in rdr.records() {
         let record = result.unwrap();
@@ -170,12 +170,12 @@ pub fn read_then_import(path: &str, provider: String) {
         let sim_number = record[2].trim();
         let qr_code = record[5].trim();
         let added = add_sim_mapper(
-            sim_id.to_string(),
-            &sim_serial.to_string(),
-            sim_number.to_string(),
-            qr_code.to_string(),
+            sim_id,
+            sim_serial,
+            sim_number,
+            qr_code,
             true,
-            &provider,
+            provider,
         );
         match added {
             Ok(sim_mapper) => println!("Added {}", sim_mapper.iccid),
@@ -185,7 +185,9 @@ pub fn read_then_import(path: &str, provider: String) {
 }
 
 // Handler for file upload
-pub async fn upload(mut multipart: Multipart) -> Result<(StatusCode, String), (StatusCode, String)> {
+pub async fn upload(
+    mut multipart: Multipart,
+) -> Result<(StatusCode, String), (StatusCode, String)> {
     fs::create_dir_all("./uploads").map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -202,7 +204,7 @@ pub async fn upload(mut multipart: Multipart) -> Result<(StatusCode, String), (S
         .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
     {
         if field.name() == Some("provider") {
-            provider = field.text().await.unwrap().to_string();
+            provider = field.text().await.unwrap();
         } else {
             let Some(filename) = field.file_name().map(sanitize_filename::sanitize) else {
                 continue;
@@ -221,13 +223,15 @@ pub async fn upload(mut multipart: Multipart) -> Result<(StatusCode, String), (S
         }
     }
     println!("file_path: {}", file_path);
-    read_then_import(&file_path, provider);
+    read_then_import(&file_path, provider.as_str());
     Ok((StatusCode::OK, "Uploaded".to_string()))
 }
 
-
 // Efficient line counting and searching
-pub fn count_lines_and_search(reader: &mut impl BufRead, search_term: Option<&str>) -> SearchResult {
+pub fn count_lines_and_search(
+    reader: &mut impl BufRead,
+    search_term: Option<&str>,
+) -> SearchResult {
     let mut total_lines = 0;
     let mut search_results = search_term.map(|_| Vec::new());
     let search_term = search_term.unwrap().to_lowercase().clone();
@@ -265,7 +269,6 @@ pub fn read_lines_range(
     // Read specified number of lines
     reader.by_ref().lines().take(num_lines).collect()
 }
-
 
 pub fn get_xplori_token() -> String {
     "".to_string()

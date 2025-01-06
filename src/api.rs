@@ -1,16 +1,11 @@
-use crate::serializers::{Pagination, SimResponse};
+use crate::serializers::{SimQuery, SimResponse};
 use crate::utils::get_sims;
-use axum::{
-    extract::Query,
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::Query, http::StatusCode, Json};
 
 pub async fn list_sims(
-    Query(pagination): Query<Pagination>,
+    Query(query): Query<SimQuery>,
 ) -> Result<Json<SimResponse>, (StatusCode, String)> {
-    let res = get_sims(pagination.page as i64,
-                       pagination.page_size as i64).expect("TODO: panic message");
+    let res = get_sims(query.page, query.page_size, query.provider, query.search).expect("TODO: panic message");
     let total = &res.len();
     Ok(Json(SimResponse {
         count: total.clone() as i64,
