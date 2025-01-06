@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-axum = { version = "0.8.0-alpha.1", features = ["multipart"] }
+axum = { version = "0.8.0-alpha.1", features = ["multipart", "macros"] }
 http = "1.2.0"
 tower-http = { version = "0.6.2", features = ["cors"] }
 tokio = { version = "1.42.0", features = ["rt-multi-thread", "fs"] }

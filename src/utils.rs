@@ -23,8 +23,8 @@ pub fn establish_connection() -> PgConnection {
 pub fn get_sims(
     page: Option<i64>,
     page_size: Option<i64>,
-    provider: Option<&'static str>,
-    search: Option<&'static str>,
+    provider: Option<String>,
+    search: Option<String>,
 ) -> QueryResult<Vec<Sim>> {
     let conn = &mut establish_connection();
     let query = SimQuery {

@@ -5,15 +5,16 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::io;
 
+#[derive(Deserialize, Debug, Clone)]
 pub struct SimQuery {
     pub page: Option<i64>,
     pub page_size: Option<i64>,
-    pub search: Option<&'static str>,
-    pub provider: Option<&'static str>,
+    pub search: Option<String>,
+    pub provider: Option<String>,
 }
 
 impl SimQuery {
-    fn apply_query<'a>(&self, query: api_sim::BoxedQuery<'a, Pg>) -> api_sim::BoxedQuery<'a, Pg> {
+    fn apply_query<'a>(&'a self, query: api_sim::BoxedQuery<'a, Pg>) -> api_sim::BoxedQuery<'a, Pg> {
         let mut query = query;
 
         let page_size = self.page_size.unwrap_or(10);
@@ -21,11 +22,11 @@ impl SimQuery {
             .offset((self.page_size.unwrap_or(1) - 1) * page_size)
             .limit(page_size);
 
-        if let Some(provider) = self.provider {
+        if let Some(provider) = &self.provider {
             query = query.filter(api_sim::provider.eq(provider));
         }
 
-        if let Some(search) = self.search {
+        if let Some(search) = &self.search {
             let pattern = format!("%{}%", search);
             query = query.filter(
                 api_sim::sim_id
