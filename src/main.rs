@@ -14,19 +14,17 @@ use std::{
     io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write},
     path::Path,
 };
-use tower_http::cors::{Any, CorsLayer};
-use streami::{add_sim_mapper, get_sims};
 use streami::models::Sim;
+use streami::{add_sim_mapper, get_sims};
+use tower_http::cors::{Any, CorsLayer};
 
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
-
 
 #[derive(Deserialize)]
 struct Pagination {
     page: usize,
     page_size: usize,
 }
-
 
 impl Default for Pagination {
     fn default() -> Self {
@@ -50,16 +48,14 @@ struct FileContentResponse {
     content: Vec<String>,
 }
 
-
 #[derive(Serialize)]
 struct SimResponse {
     total: i64,
     page: i64,
-    data: Vec<Sim>
+    data: Vec<Sim>,
 }
 
-
-fn read_then_import(path: &str, provider: String){
+fn read_then_import(path: &str, provider: String) {
     let mut rdr = Reader::from_path(path).unwrap();
     for result in rdr.records() {
         let record = result.unwrap();
@@ -67,15 +63,20 @@ fn read_then_import(path: &str, provider: String){
         let sim_serial = record[1].trim();
         let sim_number = record[2].trim();
         let qr_code = record[5].trim();
-        add_sim_mapper(sim_id.to_string(),
-                       sim_serial.to_string(),
-                       sim_number.to_string(),
-                       qr_code.to_string(),
-                       true,
-                       provider.as_str());
+        let added = add_sim_mapper(
+            sim_id.to_string(),
+            &sim_serial.to_string(),
+            sim_number.to_string(),
+            qr_code.to_string(),
+            true,
+            &provider,
+        );
+        match added {
+            Ok(sim_mapper) => println!("Added {}", sim_mapper.iccid),
+            Err(msg) => println!("Error: {}", msg),
+        }
     }
 }
-
 
 // Handler for file upload
 async fn upload(mut multipart: Multipart) -> Result<(StatusCode, String), (StatusCode, String)> {
@@ -252,10 +253,17 @@ async fn get_file_content(
     }
 }
 
-async fn list_sims(Query(pagination): Query<Pagination>,) -> Result<Json<SimResponse>, (StatusCode, String)> {
-    let res = get_sims(pagination.page as i64, pagination.page_size as i64).expect("TODO: panic message");
+async fn list_sims(
+    Query(pagination): Query<Pagination>,
+) -> Result<Json<SimResponse>, (StatusCode, String)> {
+    let res =
+        get_sims(pagination.page as i64, pagination.page_size as i64).expect("TODO: panic message");
     let total = &res.len();
-    Ok(Json(SimResponse { data: res, page: pagination.page as i64, total: *total as i64 }))
+    Ok(Json(SimResponse {
+        data: res,
+        page: pagination.page as i64,
+        total: *total as i64,
+    }))
 }
 
 #[tokio::main]

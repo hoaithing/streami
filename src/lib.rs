@@ -30,18 +30,18 @@ pub fn get_sims(page: i64, page_size: i64) -> Result<Vec<Sim>, diesel::result::E
 
 pub fn add_sim_mapper(
     imsi: String,
-    iccid: String,
+    iccid: &String,
     msisdn: String,
     qr_code: String,
     esim: bool,
-    provider: &str,
-) -> Option<SimMapper> {
+    provider: &String,
+) -> QueryResult<SimMapper> {
     let conn = &mut establish_connection();
     let new_sim = SimMapperInsert {
         imsi,
-        iccid,
+        iccid: iccid.clone(),
         esim,
-        provider: provider.to_string(),
+        provider: provider.clone(),
         qr_code: Some(qr_code),
         synced: false,
         last_email: None,
@@ -54,17 +54,9 @@ pub fn add_sim_mapper(
         joytel_pin: "".to_string(),
     };
 
-    let result = diesel::insert_into(api_simidmapper::table)
+    diesel::insert_into(api_simidmapper::table)
         .values(&new_sim)
         .returning(SimMapper::as_returning())
-        .get_result(conn);
+        .get_result(conn)
 
-    let res = match result {
-        Ok(sim_mapper) => sim_mapper,
-        Err(e) => {
-            println!("{:?}", e);
-            return None;
-        }
-    };
-    Some(res)
 }
