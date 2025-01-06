@@ -1,5 +1,5 @@
 pub mod models;
 pub mod schema;
-pub mod response;
+pub mod serializers;
 pub mod utils;
 pub mod api;

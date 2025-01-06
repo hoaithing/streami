@@ -1,4 +1,4 @@
-use crate::response::{Pagination, SimResponse};
+use crate::serializers::{Pagination, SimResponse};
 use crate::utils::get_sims;
 use axum::{
     extract::Query,
@@ -16,6 +16,6 @@ pub async fn list_sims(
         count: total.clone() as i64,
         next: "",
         prev: None,
-        results: vec![],
+        results: res,
     }))
 }

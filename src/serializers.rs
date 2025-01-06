@@ -1,5 +1,6 @@
 use std::io;
 use serde::{Deserialize, Serialize};
+use crate::models::Sim;
 
 #[derive(Deserialize)]
 pub struct Pagination {
@@ -35,7 +36,7 @@ pub struct SimResponse {
     pub count: i64,
     pub next: &'static str,
     pub prev: Option<&'static str>,
-    pub results: Vec<SimMapper>
+    pub results: Vec<Sim>
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
