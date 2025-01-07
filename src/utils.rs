@@ -1,71 +1,75 @@
-use crate::models::{Sim, SimMapper, SimMapperInsert};
-use crate::schema::api_simidmapper;
 use crate::serializers::*;
 use axum::extract::{Multipart, Query};
 use axum::Json;
-use chrono::prelude::*;
 use csv::Reader;
-use diesel::prelude::*;
-use diesel::{Connection, PgConnection};
 use http::StatusCode;
+use serde::{Deserialize};
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
-use std::{env, fs, io};
+use std::{fs, io};
 
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
 
-pub fn establish_connection() -> PgConnection {
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    PgConnection::establish(&database_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
+
+pub async fn create_pool() -> Pool<Postgres> {
+    PgPoolOptions::new()
+        .max_connections(5)
+        .connect("postgres://xplori:GZkwR$4Kfu4xff8@127.0.0.1/xplori")
+        .await
+        .expect("Failed to create pool")
 }
 
-pub fn get_sims(
-    page: Option<i64>,
-    page_size: Option<i64>,
-    provider: Option<String>,
-    search: Option<String>,
-) -> QueryResult<Vec<Sim>> {
-    let conn = &mut establish_connection();
-    let query = SimQuery {
-        page,
-        page_size,
-        search,
-        provider,
-    };
-    query.execute(conn)
-}
+pub async fn get_sims(
+    Query(filters): Query<SimQuery>,
+    pool: axum::extract::State<Pool<Postgres>>,
+) -> Json<Vec<Sim>> {
 
-pub fn add_sim_mapper(
-    imsi: &str,
-    iccid: &str,
-    msisdn: &str,
-    qr_code: &str,
-    esim: bool,
-    provider: &str,
-) -> QueryResult<SimMapper> {
-    let conn = &mut establish_connection();
-    let new_sim = SimMapperInsert {
-        imsi: imsi.to_owned(),
-        iccid: iccid.to_owned(),
-        esim,
-        provider: provider.to_owned(),
-        qr_code: Some(qr_code.to_owned()),
-        synced: false,
-        last_email: None,
-        msisdn: Some(msisdn.to_owned()),
-        active: false,
-        booking_id: None,
-        created: Some(Utc::now()),
-        updated: Default::default(),
-        assigned: false,
-        joytel_pin: "".to_string(),
-    };
+    let mut query = sqlx::QueryBuilder::new(
+        "WITH filtered_sims AS (
+            SELECT id, sim_id, sim_serial, sim_number, provider, active FROM api_sim WHERE 1=1"
+    );
 
-    diesel::insert_into(api_simidmapper::table)
-        .values(&new_sim)
-        .returning(SimMapper::as_returning())
-        .get_result(conn)
+    if let Some(search) = filters.search {
+        query.push(" AND sim_serial ILIKE ");
+        query.push_bind(format!("%{}%", search));
+    }
+
+    if let Some(provider) = filters.provider {
+        query.push(" AND provider = ");
+        query.push_bind(provider);
+    }
+
+    if let Some(page_size) = filters.page_size {
+        query.push(" LIMIT ");
+        query.push_bind(page_size);
+    }
+
+    if let Some(page) = filters.page {
+        query.push(" OFFSET ");
+        query.push_bind(page);
+    }
+
+    query.push(") SELECT *, COUNT(*) OVER() as total FROM filtered_sims");
+
+
+    let users = query
+        .build_query_as::<Sim>()
+        .fetch_all(&*pool)
+        .await
+        .unwrap();
+
+    let total_count = users.first().map(|u| u.total).unwrap_or(0);
+
+    Json(PaginatedSimResponse {
+        count: 0,
+        next: "",
+        prev: None,
+        total: total_count,
+        results: vec![],
+    })
+
+    Json(users)
 }
 
 pub async fn get_file_content(
@@ -161,26 +165,24 @@ pub async fn get_file_content(
 }
 
 pub fn read_then_import(path: &str, provider: &str) {
-    let mut rdr = Reader::from_path(path).unwrap();
-    for result in rdr.records() {
-        let record = result.unwrap();
-        let sim_id = record[0].trim();
-        let sim_serial = record[1].trim();
-        let sim_number = record[2].trim();
-        let qr_code = record[5].trim();
-        let added = add_sim_mapper(
-            sim_id,
-            sim_serial,
-            sim_number,
-            qr_code,
-            true,
-            provider,
-        );
-        match added {
-            Ok(sim_mapper) => println!("Added {}", sim_mapper.iccid),
-            Err(msg) => println!("Error: {}", msg),
-        }
-    }
+    // let mut rdr = Reader::from_path(path).unwrap();
+    // let mut records = rdr.records();
+    // let header = records.next().unwrap().unwrap();
+    // for (index, h) in header.iter().enumerate() {
+    //     println!("{} {}", h, index);
+    // }
+    // for result in rdr.records() {
+    //     let record = result.unwrap();
+    //     let sim_id = record[0].trim();
+    //     let sim_serial = record[1].trim();
+    //     let sim_number = record[2].trim();
+    //     let qr_code = record[5].trim();
+        // let added = add_sim_mapper(sim_id, sim_serial, sim_number, qr_code, true, provider);
+        // match added {
+        //     Ok(sim_mapper) => println!("Added {}", sim_mapper.iccid),
+        //     Err(msg) => println!("Error: {}", msg),
+        // }
+    // }
 }
 
 // Handler for file upload
