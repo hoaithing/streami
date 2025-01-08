@@ -223,7 +223,7 @@ pub async fn upload(
         let sim_serial = record[*headers.get("iccid").unwrap()].trim();
         let sim_number = record[*headers.get("msisdn").unwrap()].trim();
         let qr_code = record[*headers.get("qr_code").unwrap()].trim();
-        println!("Sim_serial: {}", sim_serial);
+        println!("Sim Serial: {}", sim_serial);
         let mut query = sqlx::QueryBuilder::new(
             "INSERT INTO api_simidmapper(imsi, iccid, msisdn, qr_code, esim, synced, active, updated, assigned, joytel_pin, provider) VALUES (",
         );
@@ -239,7 +239,6 @@ pub async fn upload(
             .push_bind("").push(", ")
             .push_bind(&provider).push(");");
 
-        println!("{}", query.sql());
         let res = query.build().fetch_optional(&*pool).await;
         match res {
             Ok(row) => println!("Added {:?}", row),
