@@ -1,16 +1,16 @@
 use crate::serializers::*;
 use axum::extract::{Multipart, Query};
-use axum::Json;
-use csv::Reader;
+use axum::{debug_handler, Json};
+use csv::{ReaderBuilder};
 use http::StatusCode;
-use serde::{Deserialize};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::{fs, io};
+use std::collections::HashMap;
+use chrono::{DateTime, Local, Utc};
 
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
-
 
 pub async fn create_pool() -> Pool<Postgres> {
     PgPoolOptions::new()
@@ -23,12 +23,15 @@ pub async fn create_pool() -> Pool<Postgres> {
 pub async fn get_sims(
     Query(filters): Query<SimQuery>,
     pool: axum::extract::State<Pool<Postgres>>,
-) -> Json<Vec<Sim>> {
-
+) -> Json<PaginatedSimResponse> {
     let mut query = sqlx::QueryBuilder::new(
-        "WITH filtered_sims AS (
-            SELECT id, sim_id, sim_serial, sim_number, provider, active FROM api_sim WHERE 1=1"
+        "SELECT id, sim_id, sim_serial, sim_number, provider, active FROM api_sim WHERE 1=1",
     );
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM api_sim;")
+        .fetch_one(&*pool)
+        .await
+        .unwrap();
 
     if let Some(search) = filters.search {
         query.push(" AND sim_serial ILIKE ");
@@ -50,31 +53,25 @@ pub async fn get_sims(
         query.push_bind(page);
     }
 
-    query.push(") SELECT *, COUNT(*) OVER() as total FROM filtered_sims");
+    query.push(";");
 
+    println!("{}", query.sql());
 
-    let users = query
+    let sims = query
         .build_query_as::<Sim>()
         .fetch_all(&*pool)
         .await
         .unwrap();
 
-    let total_count = users.first().map(|u| u.total).unwrap_or(0);
-
     Json(PaginatedSimResponse {
-        count: 0,
         next: "",
         prev: None,
-        total: total_count,
-        results: vec![],
+        count,
+        results: sims,
     })
-
-    Json(users)
 }
 
-pub async fn get_file_content(
-    Query(query): Query<FileContentQuery>,
-) -> Result<Json<FileContentResponse>, (StatusCode, String)> {
+pub async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<Json<FileContentResponse>, (StatusCode, String)> {
     // Validate and sanitize file path
     let file_directory = ".";
     let file_path = Path::new(file_directory).join(&query.file_name);
@@ -164,29 +161,11 @@ pub async fn get_file_content(
     }
 }
 
-pub fn read_then_import(path: &str, provider: &str) {
-    // let mut rdr = Reader::from_path(path).unwrap();
-    // let mut records = rdr.records();
-    // let header = records.next().unwrap().unwrap();
-    // for (index, h) in header.iter().enumerate() {
-    //     println!("{} {}", h, index);
-    // }
-    // for result in rdr.records() {
-    //     let record = result.unwrap();
-    //     let sim_id = record[0].trim();
-    //     let sim_serial = record[1].trim();
-    //     let sim_number = record[2].trim();
-    //     let qr_code = record[5].trim();
-        // let added = add_sim_mapper(sim_id, sim_serial, sim_number, qr_code, true, provider);
-        // match added {
-        //     Ok(sim_mapper) => println!("Added {}", sim_mapper.iccid),
-        //     Err(msg) => println!("Error: {}", msg),
-        // }
-    // }
-}
 
 // Handler for file upload
+#[debug_handler]
 pub async fn upload(
+    pool: axum::extract::State<Pool<Postgres>>,
     mut multipart: Multipart,
 ) -> Result<(StatusCode, String), (StatusCode, String)> {
     fs::create_dir_all("./uploads").map_err(|e| {
@@ -197,6 +176,7 @@ pub async fn upload(
     })?;
 
     let mut provider = "roaming".to_string();
+    let mut esim = false;
     let mut file_path = "".to_string();
 
     while let Some(mut field) = multipart
@@ -206,6 +186,9 @@ pub async fn upload(
     {
         if field.name() == Some("provider") {
             provider = field.text().await.unwrap();
+        } else if field.name() == Some("esim") {
+            let _esim = field.text().await.unwrap();
+            esim = _esim == "true";
         } else {
             let Some(filename) = field.file_name().map(sanitize_filename::sanitize) else {
                 continue;
@@ -223,8 +206,46 @@ pub async fn upload(
             file.flush().unwrap();
         }
     }
-    println!("file_path: {}", file_path);
-    read_then_import(&file_path, provider.as_str());
+    let data = fs::read_to_string(file_path.clone()).unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(data.as_bytes());
+    let mut records = rdr.records();
+    let mut headers = HashMap::new();
+    let header = records.next().unwrap().unwrap();
+    for (index, h) in header.iter().enumerate() {
+        headers.insert(h.to_string(), index);
+    }
+
+    for result in records {
+        let record = result.unwrap();
+        let sim_id = record[*headers.get("imsi").unwrap()].trim();
+        let sim_serial = record[*headers.get("iccid").unwrap()].trim();
+        let sim_number = record[*headers.get("msisdn").unwrap()].trim();
+        let qr_code = record[*headers.get("qr_code").unwrap()].trim();
+        println!("Sim_serial: {}", sim_serial);
+        let mut query = sqlx::QueryBuilder::new(
+            "INSERT INTO api_simidmapper(imsi, iccid, msisdn, qr_code, esim, synced, active, updated, assigned, joytel_pin, provider) VALUES (",
+        );
+        query.push_bind(sim_id).push(", ")
+            .push_bind(sim_serial).push(", ")
+            .push_bind(sim_number).push(", ")
+            .push_bind(qr_code).push(", ")
+            .push_bind(esim).push(", ")
+            .push_bind(false).push(", ")
+            .push_bind(true).push(", ")
+            .push_bind(DateTime::<Utc>::from_timestamp(Local::now().timestamp(), 0)).push(", ")
+            .push_bind(false).push(", ")
+            .push_bind("").push(", ")
+            .push_bind(&provider).push(");");
+
+        println!("{}", query.sql());
+        let res = query.build().fetch_optional(&*pool).await;
+        match res {
+            Ok(row) => println!("Added {:?}", row),
+            Err(msg) => println!("Error: {}", msg),
+        } 
+    }
     Ok((StatusCode::OK, "Uploaded".to_string()))
 }
 
