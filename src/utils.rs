@@ -165,7 +165,7 @@ pub async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<J
 // Handler for file upload
 #[debug_handler]
 pub async fn upload(
-    pool: axum::extract::State<Pool<Postgres>>,
+    _pool: axum::extract::State<Pool<Postgres>>,
     mut multipart: Multipart,
 ) -> Result<(StatusCode, String), (StatusCode, String)> {
     fs::create_dir_all("./uploads").map_err(|e| {
@@ -240,7 +240,7 @@ pub async fn upload(
             .push_bind("").push(", ")
             .push_bind(&provider).push(");");
 
-        let res = query.build().fetch_optional(&*pool).await;
+        let res = query.build().fetch_optional(&*_pool).await;
         match res {
             Ok(row) => println!("Added {:?}", row),
             Err(msg) => println!("Error: {}", msg),
