@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 use std::io;
 use sqlx::FromRow;
@@ -61,3 +62,25 @@ pub struct PaginatedSimResponse {
 
 
 pub type SearchResult = io::Result<(usize, Option<Vec<(usize, String)>>)>;
+
+
+
+#[derive(Debug, Deserialize)]
+pub struct CsvData {
+    pub imsi: Option<String>,
+    pub iccid: String,
+    pub msisdn: Option<String>,
+    pub qr_code: Option<String>,
+}
+
+
+impl Display for CsvData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}, {}, {}, {}",
+               self.imsi.clone().unwrap_or("".to_string()),
+               self.iccid,
+               self.msisdn.clone().unwrap_or("".to_string()),
+               self.qr_code.clone().unwrap_or("".to_string())
+        )
+    }
+}

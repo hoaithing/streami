@@ -7,7 +7,6 @@ use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::{fs, io};
-use std::collections::HashMap;
 use chrono::{DateTime, Local, Utc};
 
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
@@ -162,6 +161,7 @@ pub async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<J
 }
 
 
+
 // Handler for file upload
 #[debug_handler]
 pub async fn upload(
@@ -210,31 +210,32 @@ pub async fn upload(
     let mut rdr = ReaderBuilder::new()
         .has_headers(false)
         .from_reader(data.as_bytes());
-    let mut records = rdr.records();
-    let mut headers = HashMap::new();
-    let header = records.next().unwrap().unwrap();
-    for (index, h) in header.iter().enumerate() {
-        headers.insert(h.to_string(), index);
-    }
-
+    let records = rdr.deserialize();
     for result in records {
-        let record = result.unwrap();
-        let sim_id = record[*headers.get("imsi").unwrap()].trim();
-        let sim_serial = record[*headers.get("iccid").unwrap()].trim();
-        let sim_number = record[*headers.get("msisdn").unwrap()].trim();
-        let qr_code = record[*headers.get("qr_code").unwrap()].trim();
-        println!("Sim Serial: {}", sim_serial);
+        let record: CsvData = result.unwrap();
+        let iccid = record.iccid.trim();
+        println!("ROW: {}", record);
+        if iccid == "iccid" {
+            continue;
+        }
+        let imsi = record.imsi.unwrap_or_else(|| "IMSI".to_owned() + iccid);
+        let msisdn = record.msisdn.unwrap_or_else(|| "MSISDN".to_owned() + iccid);
+        let qr_code = record.qr_code.unwrap_or("".to_string());
+
         let mut query = sqlx::QueryBuilder::new(
-            "INSERT INTO api_simidmapper(imsi, iccid, msisdn, qr_code, esim, synced, active, updated, assigned, joytel_pin, provider) VALUES (",
+            "INSERT INTO api_simidmapper(imsi, iccid, msisdn, qr_code, esim, synced, active, updated, created, assigned, joytel_pin, provider) VALUES (",
         );
-        query.push_bind(sim_id).push(", ")
-            .push_bind(sim_serial).push(", ")
-            .push_bind(sim_number).push(", ")
-            .push_bind(qr_code).push(", ")
+        let now = DateTime::<Utc>::from_timestamp(Local::now().timestamp(), 0);
+
+        query.push_bind(imsi.trim()).push(", ")
+            .push_bind(iccid.trim()).push(", ")
+            .push_bind(msisdn.trim()).push(", ")
+            .push_bind(qr_code.trim()).push(", ")
             .push_bind(esim).push(", ")
             .push_bind(false).push(", ")
             .push_bind(true).push(", ")
-            .push_bind(DateTime::<Utc>::from_timestamp(Local::now().timestamp(), 0)).push(", ")
+            .push_bind(now).push(", ")
+            .push_bind(now).push(", ")
             .push_bind(false).push(", ")
             .push_bind("").push(", ")
             .push_bind(&provider).push(");");
@@ -243,7 +244,7 @@ pub async fn upload(
         match res {
             Ok(row) => println!("Added {:?}", row),
             Err(msg) => println!("Error: {}", msg),
-        } 
+        }
     }
     Ok((StatusCode::OK, "Uploaded".to_string()))
 }
