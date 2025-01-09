@@ -1,6 +1,6 @@
 use crate::serializers::*;
 use axum::extract::{Multipart, Query};
-use axum::{debug_handler, Json};
+use axum::Json;
 use csv::ReaderBuilder;
 use http::StatusCode;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
@@ -31,25 +31,25 @@ pub async fn get_sims_from_db(filters: SimQuery) -> (i64, Vec<Sim>) {
         "SELECT id, sim_id, sim_serial, sim_number, provider, active FROM api_sim WHERE 1=1",
     );
 
-    let mut count_query = sqlx::QueryBuilder::new(
-        "SELECT COUNT(*) FROM api_sim WHERE 1=1",
-    );
+    // let mut count_query = sqlx::QueryBuilder::new(
+    //     "SELECT COUNT(*) FROM api_sim WHERE 1=1",
+    // );
 
     if let Some(search) = filters.search {
         query.push(" AND sim_serial ILIKE ");
         query.push_bind(format!("%{}%", search));
-        count_query.push(" AND sim_serial ILIKE ");
-        count_query.push_bind(format!("%{}%", search));
+        // count_query.push(" AND sim_serial ILIKE ");
+        // count_query.push_bind(format!("%{}%", search));
     }
 
     if let Some(provider) = filters.provider {
         query.push(" AND provider = ");
         query.push_bind(provider.clone());
-        count_query.push(" AND provider = ");
-        count_query.push_bind(provider);
+        // count_query.push(" AND provider = ");
+        // count_query.push_bind(provider);
     }
 
-    count_query.push(";");
+    // count_query.push(";");
 
     if let Some(page_size) = filters.page_size {
         query.push(" LIMIT ");
@@ -63,16 +63,16 @@ pub async fn get_sims_from_db(filters: SimQuery) -> (i64, Vec<Sim>) {
 
     query.push(";");
 
-    println!("{}", query.sql());
-    println!("{}", count_query.sql());
+    // println!("{}", query.sql());
+    // println!("{}", count_query.sql());
 
     let sims = query
         .build_query_as::<Sim>()
         .fetch_all(&pool)
         .await
         .unwrap_or(Vec::new());
-    let count = count_query.build_query_scalar::<i64>().fetch_one(&pool).await.unwrap_or(0);
-    (count, sims)
+    // let count = count_query.build_query_scalar::<i64>().fetch_one(&pool).await.unwrap_or(0);
+    (0, sims)
 }
 
 pub async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<Json<FileContentResponse>, (StatusCode, String)> {
@@ -166,13 +166,7 @@ pub async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<J
 }
 
 
-
-// Handler for file upload
-#[debug_handler]
-pub async fn upload(
-    _pool: axum::extract::State<Pool<Postgres>>,
-    mut multipart: Multipart,
-) -> Result<(StatusCode, String), (StatusCode, String)> {
+pub async fn extract_data(mut multipart: Multipart) -> Result<(String, String, bool), (StatusCode, String)> {
     fs::create_dir_all("./uploads").map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -185,8 +179,7 @@ pub async fn upload(
     let mut file_path = "".to_string();
 
     while let Some(mut field) = multipart
-        .next_field()
-        .await
+        .next_field().await
         .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
     {
         if field.name() == Some("provider") {
@@ -211,6 +204,11 @@ pub async fn upload(
             file.flush().unwrap();
         }
     }
+    Ok((provider, file_path, esim))
+}
+
+pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String) {
+    let pool = create_pool().await;
     let data = fs::read_to_string(file_path.clone()).unwrap();
     let mut rdr = ReaderBuilder::new()
         .has_headers(false)
@@ -245,7 +243,7 @@ pub async fn upload(
             .push_bind("").push(", ")
             .push_bind(&provider).push(");");
 
-        let res = query.build().fetch_optional(&*_pool).await;
+        let res = query.build().fetch_optional(&pool).await;
         match res {
             Ok(row) => println!("Mapper Added {:?}", row),
             Err(msg) => println!("Mapper Error: {}", msg),
@@ -270,14 +268,14 @@ pub async fn upload(
             .push_bind(now).push(", ")
             .push_bind(&provider).push(");");
 
-        let sim_res = sim_query.build().fetch_optional(&*_pool).await;
+        let sim_res = sim_query.build().fetch_optional(&pool).await;
         match sim_res {
             Ok(row) => println!("Added Sim {:?}", row),
             Err(msg) => println!("Sim Error: {}", msg),
         }
     }
-    Ok((StatusCode::OK, "Uploaded".to_string()))
 }
+
 
 // Efficient line counting and searching
 pub fn count_lines_and_search(

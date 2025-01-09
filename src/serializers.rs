@@ -54,8 +54,6 @@ pub struct Sim {
 #[derive(Serialize)]
 pub struct PaginatedSimResponse {
     pub count: i64,
-    pub next: &'static str,
-    pub prev: Option<&'static str>,
     pub results: Vec<Sim>,
 }
 
@@ -77,5 +75,35 @@ impl Display for CsvData {
                self.msisdn.clone().unwrap_or("".to_string()),
                self.qr_code.clone().unwrap_or("".to_string())
         )
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum XploriStatusCode {
+    Success,
+    Error,
+    InternalError,
+    NotFound,
+    BadRequest,
+    Unauthorized,
+    Forbidden,
+    PayloadTooLarge,
+    UnsupportedMediaType,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CustomResponse {
+    pub message: String,
+    pub data: Option<String>,
+    pub status: XploriStatusCode,
+}
+
+impl Default for CustomResponse {
+    fn default() -> Self {
+        Self {
+            message: "".to_string(),
+            data: None,
+            status: XploriStatusCode::Success
+        }
     }
 }
