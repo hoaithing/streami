@@ -24,28 +24,32 @@ pub async fn create_pool() -> Pool<Postgres> {
     }
 }
 
-pub async fn get_sims(
-    Query(filters): Query<SimQuery>,
-    pool: axum::extract::State<Pool<Postgres>>,
-) -> Json<PaginatedSimResponse> {
+pub async fn get_sims_from_db(filters: SimQuery) -> (i64, Vec<Sim>) {
+    let pool = create_pool().await;
+
     let mut query = sqlx::QueryBuilder::new(
         "SELECT id, sim_id, sim_serial, sim_number, provider, active FROM api_sim WHERE 1=1",
     );
 
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM api_sim;")
-        .fetch_one(&*pool)
-        .await
-        .unwrap();
+    let mut count_query = sqlx::QueryBuilder::new(
+        "SELECT COUNT(*) FROM api_sim WHERE 1=1",
+    );
 
     if let Some(search) = filters.search {
         query.push(" AND sim_serial ILIKE ");
         query.push_bind(format!("%{}%", search));
+        count_query.push(" AND sim_serial ILIKE ");
+        count_query.push_bind(format!("%{}%", search));
     }
 
     if let Some(provider) = filters.provider {
         query.push(" AND provider = ");
-        query.push_bind(provider);
+        query.push_bind(provider.clone());
+        count_query.push(" AND provider = ");
+        count_query.push_bind(provider);
     }
+
+    count_query.push(";");
 
     if let Some(page_size) = filters.page_size {
         query.push(" LIMIT ");
@@ -60,19 +64,15 @@ pub async fn get_sims(
     query.push(";");
 
     println!("{}", query.sql());
+    println!("{}", count_query.sql());
 
     let sims = query
         .build_query_as::<Sim>()
-        .fetch_all(&*pool)
+        .fetch_all(&pool)
         .await
-        .unwrap();
-
-    Json(PaginatedSimResponse {
-        next: "",
-        prev: None,
-        count,
-        results: sims,
-    })
+        .unwrap_or(Vec::new());
+    let count = count_query.build_query_scalar::<i64>().fetch_one(&pool).await.unwrap_or(0);
+    (count, sims)
 }
 
 pub async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<Json<FileContentResponse>, (StatusCode, String)> {

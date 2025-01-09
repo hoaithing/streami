@@ -1,6 +1,6 @@
 use axum::routing::post;
 use axum::{extract::DefaultBodyLimit, routing::get, Router};
-use streami::utils::get_sims;
+use streami::api::get_sims;
 use streami::utils::{create_pool, get_file_content, upload};
 use tower_http::cors::{Any, CorsLayer};
 
