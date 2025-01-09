@@ -248,7 +248,9 @@ pub async fn upload(
 
         // add data into Sim table as well
         let mut sim_query = sqlx::QueryBuilder::new(
-            "INSERT INTO api_sim(sim_id, sim_serial, sim_number, qr_code, esim, active, updated, created, provider) VALUES (",
+            "INSERT INTO api_sim(sim_id, sim_serial, sim_number, qr_code, esim, active, subscribed, \
+             use_fup_code, sent_email,
+             created_time, provider) VALUES (",
         );
 
         sim_query.push_bind(imsi.trim()).push(", ")
@@ -257,7 +259,9 @@ pub async fn upload(
             .push_bind(qr_code.trim()).push(", ")
             .push_bind(esim).push(", ")
             .push_bind(true).push(", ")
-            .push_bind(now).push(", ")
+            .push_bind(false).push(", ")
+            .push_bind(false).push(", ")
+            .push_bind(false).push(", ")
             .push_bind(now).push(", ")
             .push_bind(&provider).push(");");
 
