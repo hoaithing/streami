@@ -1,7 +1,7 @@
 use crate::serializers::*;
 use axum::extract::{Multipart, Query};
 use axum::{debug_handler, Json};
-use csv::{ReaderBuilder};
+use csv::ReaderBuilder;
 use http::StatusCode;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
@@ -242,8 +242,29 @@ pub async fn upload(
 
         let res = query.build().fetch_optional(&*_pool).await;
         match res {
-            Ok(row) => println!("Added {:?}", row),
-            Err(msg) => println!("Error: {}", msg),
+            Ok(row) => println!("Mapper Added {:?}", row),
+            Err(msg) => println!("Mapper Error: {}", msg),
+        }
+
+        // add data into Sim table as well
+        let mut sim_query = sqlx::QueryBuilder::new(
+            "INSERT INTO api_sim(sim_id, sim_serial, sim_number, qr_code, esim, active, updated, created, provider) VALUES (",
+        );
+
+        sim_query.push_bind(imsi.trim()).push(", ")
+            .push_bind(iccid.trim()).push(", ")
+            .push_bind(msisdn.trim()).push(", ")
+            .push_bind(qr_code.trim()).push(", ")
+            .push_bind(esim).push(", ")
+            .push_bind(true).push(", ")
+            .push_bind(now).push(", ")
+            .push_bind(now).push(", ")
+            .push_bind(&provider).push(");");
+
+        let sim_res = sim_query.build().fetch_optional(&*_pool).await;
+        match sim_res {
+            Ok(row) => println!("Added Sim {:?}", row),
+            Err(msg) => println!("Sim Error: {}", msg),
         }
     }
     Ok((StatusCode::OK, "Uploaded".to_string()))
