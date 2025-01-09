@@ -6,7 +6,7 @@ use http::StatusCode;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
-use std::{fs, io};
+use std::{fs, io, env::var};
 use chrono::{DateTime, Local, Utc};
 
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
@@ -14,7 +14,7 @@ const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
 pub async fn create_pool() -> Pool<Postgres> {
     PgPoolOptions::new()
         .max_connections(5)
-        .connect("postgres://xplori:GZkwR$4Kfu4xff8@127.0.0.1/xplori")
+        .connect(var("DATABASE_URL").expect("Invalid DATABASE_URL").as_str())
         .await
         .expect("Failed to create pool")
 }
