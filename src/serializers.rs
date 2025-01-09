@@ -24,7 +24,6 @@ pub struct FileContentResponse {
     pub content: Vec<String>,
 }
 
-
 #[derive(Serialize, Deserialize, Debug, Clone, FromRow)]
 pub struct SimMapper {
     pub id: i32,
@@ -60,10 +59,7 @@ pub struct PaginatedSimResponse {
     pub results: Vec<Sim>,
 }
 
-
 pub type SearchResult = io::Result<(usize, Option<Vec<(usize, String)>>)>;
-
-
 
 #[derive(Debug, Deserialize)]
 pub struct CsvData {
@@ -72,7 +68,6 @@ pub struct CsvData {
     pub msisdn: Option<String>,
     pub qr_code: Option<String>,
 }
-
 
 impl Display for CsvData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
