@@ -6,17 +6,22 @@ use http::StatusCode;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
-use std::{fs, io, env::var};
+use std::{fs, io, env};
 use chrono::{DateTime, Local, Utc};
 
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
 
 pub async fn create_pool() -> Pool<Postgres> {
-    PgPoolOptions::new()
-        .max_connections(5)
-        .connect(var("DATABASE_URL").expect("Invalid DATABASE_URL").as_str())
-        .await
-        .expect("Failed to create pool")
+    let database_env = env::var("DATABASE_URL");
+    if database_env.is_ok() {
+        PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&database_env.unwrap())
+            .await
+            .expect("Failed to create pool")
+    } else {
+        panic!("{:?}", database_env.unwrap());
+    }
 }
 
 pub async fn get_sims(
