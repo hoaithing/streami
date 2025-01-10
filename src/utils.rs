@@ -3,7 +3,7 @@ use axum::extract::{Multipart, Query};
 use axum::Json;
 use csv::ReaderBuilder;
 use http::StatusCode;
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
+use sqlx::{postgres::PgPoolOptions, Database, FromRow, Pool, Postgres};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::{fs, io, env};
@@ -23,6 +23,36 @@ pub async fn create_pool() -> Pool<Postgres> {
         panic!("{:?}", database_env.unwrap());
     }
 }
+
+// Generic pagination trait
+pub trait Pageable {
+    fn get_table_name() -> &'static str;
+    fn get_id_field() -> &'static str;
+}
+
+
+pub async fn paginated_query<T>(
+    pool: &Pool<Postgres>,
+    page_size: i32,
+) -> Result<Vec<T>, sqlx::Error>
+where
+    T: for<'r> FromRow<'r, <Postgres as Database>::Row> + Send + Unpin + Pageable,
+    Postgres: Database,
+    i32: sqlx::Type<Postgres>,
+{
+    let query = format!(
+        "SELECT * FROM {} WHERE 1=1 ORDER BY {} LIMIT $2",
+        T::get_table_name(),
+        T::get_id_field(),
+    );
+
+    sqlx::query_as::<_, T>(&query)
+        .bind(page_size)
+        .fetch_all(pool)
+        .await
+}
+
+
 
 pub async fn get_sims_from_db(filters: SimQuery) -> (i64, Vec<Sim>) {
     let pool = create_pool().await;
