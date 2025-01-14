@@ -8,6 +8,7 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::{fs, io, env};
 use chrono::{DateTime, Local, Utc};
+use tracing::info;
 
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
 
@@ -61,25 +62,26 @@ pub async fn get_sims_from_db(filters: SimQuery) -> (i64, Vec<Sim>) {
         "SELECT id, sim_id, sim_serial, sim_number, provider, active FROM api_sim WHERE 1=1",
     );
 
-    // let mut count_query = sqlx::QueryBuilder::new(
-    //     "SELECT COUNT(*) FROM api_sim WHERE 1=1",
-    // );
+    let mut count_query = sqlx::QueryBuilder::new(
+        "SELECT COUNT(*) FROM api_sim WHERE 1=1",
+    );
 
     if let Some(search) = filters.search {
         query.push(" AND sim_serial ILIKE ");
         query.push_bind(format!("%{}%", search));
-        // count_query.push(" AND sim_serial ILIKE ");
-        // count_query.push_bind(format!("%{}%", search));
+        count_query.push(" AND sim_serial ILIKE ");
+        count_query.push_bind(format!("%{}%", search));
     }
 
     if let Some(provider) = filters.provider {
         query.push(" AND provider = ");
         query.push_bind(provider.clone());
-        // count_query.push(" AND provider = ");
-        // count_query.push_bind(provider);
+        count_query.push(" AND provider = ");
+        count_query.push_bind(provider);
     }
 
-    // count_query.push(";");
+    query.push(" ORDER BY created_time DESC ");
+    count_query.push(";");
 
     if let Some(page_size) = filters.page_size {
         query.push(" LIMIT ");
@@ -93,7 +95,7 @@ pub async fn get_sims_from_db(filters: SimQuery) -> (i64, Vec<Sim>) {
 
     query.push(";");
 
-    // println!("{}", query.sql());
+    println!("{}", query.sql());
     // println!("{}", count_query.sql());
 
     let sims = query
@@ -101,8 +103,8 @@ pub async fn get_sims_from_db(filters: SimQuery) -> (i64, Vec<Sim>) {
         .fetch_all(&pool)
         .await
         .unwrap_or(Vec::new());
-    // let count = count_query.build_query_scalar::<i64>().fetch_one(&pool).await.unwrap_or(0);
-    (0, sims)
+    let count = count_query.build_query_scalar::<i64>().fetch_one(&pool).await.unwrap_or(0);
+    (count, sims)
 }
 
 pub async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<Json<FileContentResponse>, (StatusCode, String)> {

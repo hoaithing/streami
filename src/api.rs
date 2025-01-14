@@ -5,9 +5,9 @@ use axum::{debug_handler, Json};
 use sqlx::{Pool, Postgres};
 
 pub async fn get_sims(Query(filters): Query<SimQuery>) -> Json<PaginatedSimResponse> {
-    let (count, sims) = get_sims_from_db(filters).await;
+    let (total, sims) = get_sims_from_db(filters).await;
     Json(PaginatedSimResponse {
-        count,
+        total,
         results: sims,
     })
 }

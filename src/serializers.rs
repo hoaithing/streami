@@ -53,7 +53,7 @@ pub struct Sim {
 
 #[derive(Serialize)]
 pub struct PaginatedSimResponse {
-    pub count: i64,
+    pub total: i64,
     pub results: Vec<Sim>,
 }
 
