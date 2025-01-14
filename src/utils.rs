@@ -8,7 +8,6 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::{fs, io, env};
 use chrono::{DateTime, Local, Utc};
-use tracing::info;
 
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
 
@@ -74,10 +73,12 @@ pub async fn get_sims_from_db(filters: SimQuery) -> (i64, Vec<Sim>) {
     }
 
     if let Some(provider) = filters.provider {
-        query.push(" AND provider = ");
-        query.push_bind(provider.clone());
-        count_query.push(" AND provider = ");
-        count_query.push_bind(provider);
+        if !provider.is_empty() {
+            query.push(" AND provider = ");
+            query.push_bind(provider.clone());
+            count_query.push(" AND provider = ");
+            count_query.push_bind(provider);
+        }
     }
 
     query.push(" ORDER BY created_time DESC ");
