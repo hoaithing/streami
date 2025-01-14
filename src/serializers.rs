@@ -80,12 +80,12 @@ impl Display for CsvData {
 
 #[derive(Serialize, Deserialize)]
 pub enum XploriStatusCode {
-    Success,
-    Error,
-    InternalError,
-    NotFound,
-    BadRequest,
-    Unauthorized,
+    Success = 1,
+    Error = 2,
+    InternalError = 3 ,
+    NotFound = 4,
+    BadRequest = 5,
+    Unauthorized = 6,
     Forbidden,
     PayloadTooLarge,
     UnsupportedMediaType,

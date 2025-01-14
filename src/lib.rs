@@ -1,5 +1,5 @@
 pub mod api;
-pub mod jwt;
+// pub mod jwt;
 pub mod models;
 pub mod schema;
 pub mod serializers;
