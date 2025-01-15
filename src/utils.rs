@@ -55,16 +55,13 @@ pub async fn get_sims_from_db(filters: SimQuery) -> (i64, Vec<Sim>) {
     query.push(" ORDER BY created_time DESC ");
     count_query.push(";");
 
-    if let Some(page_size) = filters.page_size {
-        query.push(" LIMIT ");
-        query.push_bind(page_size);
-    }
+    let page_size = filters.page_size.unwrap_or(50);
+    let page = filters.page.unwrap_or(1);
 
-    if let Some(page) = filters.page {
-        query.push(" OFFSET ");
-        query.push_bind(page);
-    }
-
+    query.push(" LIMIT ");
+    query.push_bind(page_size);
+    query.push(" OFFSET ");
+    query.push_bind(page);
     query.push(";");
 
     println!("{}", query.sql());
