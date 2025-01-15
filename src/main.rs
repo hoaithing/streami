@@ -1,6 +1,6 @@
 use axum::routing::post;
 use axum::{extract::DefaultBodyLimit, routing::get, Router};
-use streami::api::{get_sims, upload};
+use streami::api::{get_sims_api, products_api, upload};
 use streami::utils::{create_pool, get_file_content};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -33,7 +33,8 @@ async fn main() {
         .route("/upload", post(upload))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .route("/api/file", get(get_file_content))
-        .route("/api/sims", get(get_sims))
+        .route("/api/sims", get(get_sims_api))
+        .route("/api/products", get(products_api))
         .layer(cors).layer(TraceLayer::new_for_http())
         .with_state(pool);
 

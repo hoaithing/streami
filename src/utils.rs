@@ -25,7 +25,7 @@ pub async fn create_pool() -> Pool<Postgres> {
 }
 
 
-pub async fn get_sims_from_db(filters: SimQuery) -> (i64, Vec<Sim>) {
+pub async fn get_sims_from_db(filters: DefaultQuery) -> (i64, Vec<Sim>) {
     let pool = create_pool().await;
 
     let mut query = sqlx::QueryBuilder::new(
@@ -64,7 +64,7 @@ pub async fn get_sims_from_db(filters: SimQuery) -> (i64, Vec<Sim>) {
     query.push_bind(page);
     query.push(";");
 
-    println!("{}", query.sql());
+    // println!("{}", query.sql());
     // println!("{}", count_query.sql());
 
     let sims = query
@@ -74,6 +74,31 @@ pub async fn get_sims_from_db(filters: SimQuery) -> (i64, Vec<Sim>) {
         .unwrap_or(Vec::new());
     let count = count_query.build_query_scalar::<i64>().fetch_one(&pool).await.unwrap_or(0);
     (count, sims)
+}
+
+
+pub async fn get_products(filters: DefaultQuery) -> Vec<Product> {
+    let pool = create_pool().await;
+    let mut query = sqlx::QueryBuilder::new(
+        "SELECT id, name, sku, provider, active FROM shop_module_product WHERE 1=1"
+    );
+
+    if let Some(search) = filters.search {
+        query.push(" AND name ILIKE ");
+        query.push_bind(format!("%{}%", search));
+    }
+
+    if let Some(provider) = filters.provider {
+        if !provider.is_empty() {
+            query.push(" AND provider = ");
+            query.push_bind(provider);
+        }
+    }
+    query.push(";");
+    query.build_query_as::<Product>()
+         .fetch_all(&pool)
+         .await
+         .unwrap_or(Vec::new())
 }
 
 pub async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<Json<FileContentResponse>, (StatusCode, String)> {

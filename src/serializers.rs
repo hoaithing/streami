@@ -4,7 +4,7 @@ use std::io;
 use sqlx::FromRow;
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct SimQuery {
+pub struct DefaultQuery {
     pub page: Option<i64>,
     pub page_size: Option<i64>,
     pub search: Option<String>,
@@ -47,6 +47,14 @@ pub struct Sim {
     pub sim_number: String,
     pub sim_serial: String,
     pub active: bool,
+    pub provider: String
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, FromRow)]
+pub struct Product {
+    pub id: i32,
+    pub name: String,
+    pub sku: String,
     pub provider: String
 }
 
