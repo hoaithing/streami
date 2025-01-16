@@ -1,12 +1,12 @@
-use crate::serializers::{CustomResponse, PaginatedSimResponse, DefaultQuery, Product};
+use crate::serializers::{CustomResponse, DefaultQuery, Product, Sim, PaginatedResponse};
 use crate::utils::{extract_data, get_products, get_sims_from_db, save_csv_data_to_db};
 use axum::extract::{Multipart, Query};
 use axum::{debug_handler, Json};
 use sqlx::{Pool, Postgres};
 
-pub async fn get_sims_api(Query(filters): Query<DefaultQuery>) -> Json<PaginatedSimResponse> {
+pub async fn get_sims_api(Query(filters): Query<DefaultQuery>) -> Json<PaginatedResponse<Sim>> {
     let (total, sims) = get_sims_from_db(filters).await;
-    Json(PaginatedSimResponse {
+    Json(PaginatedResponse {
         total,
         results: sims,
     })

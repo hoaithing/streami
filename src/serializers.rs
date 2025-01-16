@@ -1,7 +1,7 @@
-use std::fmt::Display;
 use serde::{Deserialize, Serialize};
-use std::io;
 use sqlx::FromRow;
+use std::fmt::Display;
+use std::io;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct DefaultQuery {
@@ -47,7 +47,7 @@ pub struct Sim {
     pub sim_number: String,
     pub sim_serial: String,
     pub active: bool,
-    pub provider: String
+    pub provider: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, FromRow)]
@@ -55,14 +55,13 @@ pub struct Product {
     pub id: i32,
     pub name: String,
     pub sku: String,
-    pub provider: String
+    pub provider: String,
 }
 
-
-#[derive(Serialize)]
-pub struct PaginatedSimResponse {
+#[derive(Serialize, Deserialize)]
+pub struct PaginatedResponse<T> {
     pub total: i64,
-    pub results: Vec<Sim>,
+    pub results: Vec<T>,
 }
 
 pub type SearchResult = io::Result<(usize, Option<Vec<(usize, String)>>)>;
@@ -77,11 +76,13 @@ pub struct CsvData {
 
 impl Display for CsvData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}, {}, {}, {}",
-               self.imsi.clone().unwrap_or("".to_string()),
-               self.iccid,
-               self.msisdn.clone().unwrap_or("".to_string()),
-               self.qr_code.clone().unwrap_or("".to_string())
+        write!(
+            f,
+            "{}, {}, {}, {}",
+            self.imsi.clone().unwrap_or("".to_string()),
+            self.iccid,
+            self.msisdn.clone().unwrap_or("".to_string()),
+            self.qr_code.clone().unwrap_or("".to_string())
         )
     }
 }
@@ -90,7 +91,7 @@ impl Display for CsvData {
 pub enum XploriStatusCode {
     Success = 1,
     Error = 2,
-    InternalError = 3 ,
+    InternalError = 3,
     NotFound = 4,
     BadRequest = 5,
     Unauthorized = 6,
@@ -111,7 +112,7 @@ impl Default for CustomResponse {
         Self {
             message: "".to_string(),
             data: None,
-            status: XploriStatusCode::Success
+            status: XploriStatusCode::Success,
         }
     }
 }
