@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::fmt::Display;
 use std::io;
+use serde::de::DeserializeOwned;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct DefaultQuery {
@@ -59,7 +60,7 @@ pub struct Product {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct PaginatedResponse<T> {
+pub struct PaginatedResponse<T: Serialize> {
     pub total: i64,
     pub results: Vec<T>,
 }
