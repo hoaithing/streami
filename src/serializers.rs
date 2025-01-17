@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::fmt::Display;
 use std::io;
-use serde::de::DeserializeOwned;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct DefaultQuery {
