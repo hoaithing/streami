@@ -33,6 +33,8 @@ pub struct DynamicFilters {
     pub page_size: Option<i64>,
     pub sort_by: Option<String>,
     pub sort_order: Option<String>,
+    pub esim: Option<bool>,
+    pub active: Option<bool>,
     #[serde(flatten)]
     pub fields: HashMap<String, String>,
 }
@@ -44,6 +46,9 @@ impl DynamicFilters {
         // Process all dynamic fields except pagination and sorting
         for (key, value) in self.fields.iter() {
             // Skip pagination and sorting parameters
+            if value.is_empty() {
+                continue;
+            }
             if !["page", "page_size", "sort_by", "sort_order"].contains(&key.as_str()) {
                 // Handle different operators in the field name
                 if key.contains("__") {
@@ -95,8 +100,17 @@ impl DynamicFilters {
                 }
             }
         }
+        if let Some(esim) = self.esim {
+            query_builder.push(" AND esim = ");
+            query_builder.push_bind(esim);
+        }
+        if let Some(active) = self.active {
+            query_builder.push(" AND active = ");
+            query_builder.push_bind(active);
+        }
         query_builder
     }
+
 
     pub fn get_sort_clause(&self) -> String {
         let sort_by = self.sort_by.as_deref().unwrap_or("created");
@@ -163,7 +177,7 @@ where
     );
 
     // Debug: Print the SQL query
-    // println!("Query SQL: {}", query_builder.sql());
+    println!("Query SQL: {}", query_builder.sql());
 
     // Execute the query
     let rows = query_builder.build().fetch_all(&pool).await?;
