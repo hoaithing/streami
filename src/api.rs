@@ -7,7 +7,8 @@ use sqlx::{Pool, Postgres};
 
 
 pub async fn get_sims_api(Query(filters): Query<DynamicFilters>) -> Json<PaginatedResponse<Sim>> {
-    let results = get_data_from_db::<Sim>(filters, TABLE_SIM, None).await;
+    let select_columns = ["id", "sim_id", "sim_serial", "sim_number", "active", "esim", "status", "provider"];
+    let results = get_data_from_db::<Sim>(filters, TABLE_SIM, Some(select_columns.join(",").as_str())).await;
     if let Ok((total, sims)) = results {
         Json(PaginatedResponse {
             total,

@@ -47,6 +47,8 @@ pub struct Sim {
     pub sim_number: String,
     pub sim_serial: String,
     pub active: bool,
+    pub status: String,
+    pub esim: bool,
     pub provider: String,
 }
 

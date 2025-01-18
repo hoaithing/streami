@@ -177,7 +177,7 @@ where
     );
 
     // Debug: Print the SQL query
-    println!("Query SQL: {}", query_builder.sql());
+    // println!("Query SQL: {}", query_builder.sql());
 
     // Execute the query
     let rows = query_builder.build().fetch_all(&pool).await?;
