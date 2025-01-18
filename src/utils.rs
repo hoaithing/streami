@@ -145,10 +145,9 @@ where
     let mut query_builder = QueryBuilder::<Postgres>::new(
         format!(
             r#"
-            WITH data AS (
-                SELECT {columns},
-                       COUNT(*) OVER() as full_count
-                FROM {table}
+            SELECT {columns},
+                   COUNT(*) OVER() as full_count
+            FROM {table}
             "#,
             columns = columns,
             table = table,
@@ -166,15 +165,7 @@ where
     query_builder.push_bind(limit);
     query_builder.push(" OFFSET ");
     query_builder.push_bind(offset);
-
-    // Close the CTE and add the final SELECT
-    query_builder.push(
-        r#"
-        )
-        SELECT *,
-               COALESCE((SELECT full_count FROM data LIMIT 1), 0) as total_count
-        FROM data"#
-    );
+    query_builder.push(";");
 
     // Debug: Print the SQL query
     // println!("Query SQL: {}", query_builder.sql());
@@ -187,7 +178,7 @@ where
 
     // Process results
     if let Some(first_row) = rows.first() {
-        total_count = first_row.try_get("total_count").unwrap_or(0);
+        total_count = first_row.try_get("full_count").unwrap_or(0);
     }
 
     for row in rows {
