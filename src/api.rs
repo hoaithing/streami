@@ -1,17 +1,25 @@
-use crate::serializers::{CustomResponse, DefaultQuery, Product, Sim, PaginatedResponse};
-use crate::utils::{extract_data, get_data_from_db, get_sims_from_db, save_csv_data_to_db, DynamicFilters};
-use crate::constants::TABLE_PRODUCT;
+use crate::serializers::{CustomResponse, Product, Sim, PaginatedResponse};
+use crate::utils::{extract_data, get_data_from_db, save_csv_data_to_db, DynamicFilters};
+use crate::constants::{TABLE_PRODUCT, TABLE_SIM};
 use axum::extract::{Multipart, Query};
 use axum::{debug_handler, Json};
 use sqlx::{Pool, Postgres};
 
 
-pub async fn get_sims_api(Query(filters): Query<DefaultQuery>) -> Json<PaginatedResponse<Sim>> {
-    let (total, sims) = get_sims_from_db(filters).await;
-    Json(PaginatedResponse {
-        total,
-        results: sims,
-    })
+pub async fn get_sims_api(Query(filters): Query<DynamicFilters>) -> Json<PaginatedResponse<Sim>> {
+    let results = get_data_from_db::<Sim>(filters, TABLE_SIM, None).await;
+    if let Ok((total, sims)) = results {
+        Json(PaginatedResponse {
+            total,
+            results: sims,
+        })
+    } else {
+        println!("Failed to fetch data from db: {}", results.err().unwrap());
+        Json(PaginatedResponse {
+            total: 0,
+            results: Vec::new(),
+        })
+    }
 }
 
 pub async fn list_product_api(Query(filters): Query<DynamicFilters>) -> Json<PaginatedResponse<Product>> {
@@ -22,8 +30,7 @@ pub async fn list_product_api(Query(filters): Query<DynamicFilters>) -> Json<Pag
             results: products,
         })
     } else {
-        println!("Failed to fetch data from db");
-        println!("{}", results.err().unwrap());
+        println!("Failed to fetch data from db: {}", results.err().unwrap());
         Json(PaginatedResponse {
             total: 0,
             results: Vec::new(),

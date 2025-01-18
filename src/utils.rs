@@ -3,13 +3,14 @@ use axum::extract::{Multipart, Query};
 use axum::Json;
 use csv::ReaderBuilder;
 use http::StatusCode;
-use sqlx::{postgres::PgPoolOptions, FromRow, Pool, Postgres, Row};
+use sqlx::{postgres::PgPoolOptions, FromRow, Pool, Postgres, QueryBuilder, Row};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::{fs, io, env};
 use std::collections::HashMap;
 use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx::postgres::PgRow;
 
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
 
@@ -26,59 +27,6 @@ pub async fn create_pool() -> Pool<Postgres> {
     }
 }
 
-
-pub async fn get_sims_from_db(filters: DefaultQuery) -> (i64, Vec<Sim>) {
-    let pool = create_pool().await;
-
-    let mut query = sqlx::QueryBuilder::new(
-        "SELECT id, sim_id, sim_serial, sim_number, provider, active FROM api_sim WHERE 1=1",
-    );
-
-    let mut count_query = sqlx::QueryBuilder::new(
-        "SELECT COUNT(*) FROM api_sim WHERE 1=1",
-    );
-
-    if let Some(search) = filters.search {
-        query.push(" AND sim_serial ILIKE ");
-        query.push_bind(format!("%{}%", search));
-        count_query.push(" AND sim_serial ILIKE ");
-        count_query.push_bind(format!("%{}%", search));
-    }
-
-    if let Some(provider) = filters.provider {
-        if !provider.is_empty() {
-            query.push(" AND provider = ");
-            query.push_bind(provider.clone());
-            count_query.push(" AND provider = ");
-            count_query.push_bind(provider);
-        }
-    }
-
-    query.push(" ORDER BY created_time DESC ");
-    count_query.push(";");
-
-    let page_size = filters.page_size.unwrap_or(50);
-    let page = filters.page.unwrap_or(1);
-
-    query.push(" LIMIT ");
-    query.push_bind(page_size);
-    query.push(" OFFSET ");
-    query.push_bind(page);
-    query.push(";");
-
-    // println!("{}", query.sql());
-    // println!("{}", count_query.sql());
-
-    let sims = query
-        .build_query_as::<Sim>()
-        .fetch_all(&pool)
-        .await
-        .unwrap_or(Vec::new());
-    let count = count_query.build_query_scalar::<i64>().fetch_one(&pool).await.unwrap_or(0);
-    (count, sims)
-}
-
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct DynamicFilters {
     pub page: Option<i64>,
@@ -90,10 +38,8 @@ pub struct DynamicFilters {
 }
 
 impl DynamicFilters {
-    pub fn build_where_clause(&self) -> (String, Vec<String>) {
-        let mut where_clause = String::from(" WHERE 1=1");
-        let mut bindings = Vec::new();
-        let mut param_count = 1;
+    pub fn build_where_clause<'a>(&'a self, query_builder: &'a mut QueryBuilder<'a, Postgres>) -> &'a mut QueryBuilder<'a, Postgres> {
+        query_builder.push(" WHERE 1=1");
 
         // Process all dynamic fields except pagination and sorting
         for (key, value) in self.fields.iter() {
@@ -107,64 +53,53 @@ impl DynamicFilters {
 
                     match operator {
                         "like" => {
-                            where_clause.push_str(&format!(" AND {} ILIKE ${}", field_name, param_count));
-                            bindings.push(format!("%{}%", value));
+                            query_builder.push(format!(" AND {} ILIKE ", field_name));
+                            query_builder.push_bind(format!("%{}%", value));
                         }
                         "gt" => {
-                            where_clause.push_str(&format!(" AND {} > ${}", field_name, param_count));
-                            bindings.push(value.to_string());
+                            query_builder.push(format!(" AND {} > ", field_name));
+                            query_builder.push_bind(value);
                         }
                         "lt" => {
-                            where_clause.push_str(&format!(" AND {} < ${}", field_name, param_count));
-                            bindings.push(value.to_string());
+                            query_builder.push(format!(" AND {} < ", field_name));
+                            query_builder.push_bind(value);
                         }
                         "gte" => {
-                            where_clause.push_str(&format!(" AND {} >= ${}", field_name, param_count));
-                            bindings.push(value.to_string());
+                            query_builder.push(format!(" AND {} >= ", field_name));
+                            query_builder.push_bind(value);
                         }
                         "lte" => {
-                            where_clause.push_str(&format!(" AND {} <= ${}", field_name, param_count));
-                            bindings.push(value.to_string());
+                            query_builder.push(format!(" AND {} <= ", field_name));
+                            query_builder.push_bind(value);
                         }
                         "in" => {
                             let values: Vec<&str> = value.split(',').collect();
                             if !values.is_empty() {
-                                // Create placeholders for each value: $1, $2, $3, etc.
-                                let placeholders: Vec<String> = (0..values.len())
-                                    .map(|i| format!("${}", param_count + i))
-                                    .collect();
-
-                                where_clause.push_str(&format!(
-                                    " AND {} IN ({})",
-                                    field_name,
-                                    placeholders.join(", ")
-                                ));
-
-                                let count = values.len();
-                                bindings.extend(values.into_iter().map(|v| v.trim().to_string()));
-                                param_count += count;
+                                query_builder.push(format!(" AND {} IN (", field_name));
+                                let mut separated = query_builder.separated(", ");
+                                for value in values {
+                                    separated.push_bind(value.trim().to_string());
+                                }
+                                separated.push_unseparated(")");
                             }
                         }
                         _ => {
-                            where_clause.push_str(&format!(" AND {} = ${}", field_name, param_count));
-                            bindings.push(value.to_string());
-                            param_count += 1;
+                            query_builder.push(format!(" AND {} = ", field_name));
+                            query_builder.push_bind(value);
                         }
                     }
                 } else {
                     // Default to exact match if no operator is specified
-                    where_clause.push_str(&format!(" AND {} = ${}", key, param_count));
-                    bindings.push(value.to_string());
+                    query_builder.push(format!(" AND {} = ", key));
+                    query_builder.push_bind(value);
                 }
-                param_count += 1;
             }
         }
-
-        (where_clause, bindings)
+        query_builder
     }
 
     pub fn get_sort_clause(&self) -> String {
-        let sort_by = self.sort_by.as_deref().unwrap_or("created_at");
+        let sort_by = self.sort_by.as_deref().unwrap_or("created");
         let sort_order = self.sort_order.as_deref().unwrap_or("DESC");
 
         format!(" ORDER BY {} {}", sort_by, sort_order)
@@ -179,58 +114,58 @@ impl DynamicFilters {
     }
 }
 
-
 pub async fn get_data_from_db<T>(
     filters: DynamicFilters,
     table: &str,
     select_columns: Option<&str>,
 ) -> Result<(i64, Vec<T>), sqlx::Error>
 where
-    T: for<'r> FromRow<'r, sqlx::postgres::PgRow> + Send + Unpin
+    T: for<'r> FromRow<'r, PgRow> + Send + Unpin
 {
     let pool = create_pool().await;
-
-    // Get filter components
-    let (where_clause, bindings) = filters.build_where_clause();
-    let sort_clause = filters.get_sort_clause();
+    let columns = select_columns.unwrap_or("*");
     let (limit, offset) = filters.get_pagination();
+    let sort_clause = filters.get_sort_clause();
 
-    // Construct the query with CTE for counting
+    // Start building the query
+    let mut query_builder = QueryBuilder::<Postgres>::new(
+        format!(
+            r#"
+            WITH data AS (
+                SELECT {columns},
+                       COUNT(*) OVER() as full_count
+                FROM {table}
+            "#,
+            columns = columns,
+            table = table,
+        )
+    );
 
-    let colums = select_columns.unwrap_or("*");
+    // Add WHERE clause and bindings
+    let query_builder = filters.build_where_clause(&mut query_builder);
 
-    let query = format!(
+    // Add sorting
+    query_builder.push(&sort_clause);
+
+    // Add LIMIT and OFFSET
+    query_builder.push(" LIMIT ");
+    query_builder.push_bind(limit);
+    query_builder.push(" OFFSET ");
+    query_builder.push_bind(offset);
+
+    // Close the CTE and add the final SELECT
+    query_builder.push(
         r#"
-        WITH data AS (
-            SELECT {colums},
-                   COUNT(*) OVER() as full_count
-            FROM {table}
-            {where_clause}
-            {sort_clause}
-            LIMIT ${} OFFSET ${}
         )
         SELECT *,
                COALESCE((SELECT full_count FROM data LIMIT 1), 0) as total_count
-        FROM data;
-        "#,
-        bindings.len() + 1,
-        bindings.len() + 2
+        FROM data"#
     );
 
-    // Create and execute the query
-    let mut query_builder = sqlx::QueryBuilder::new(query);
+    // Debug: Print the SQL query
+    // println!("Query SQL: {}", query_builder.sql());
 
-    // Add WHERE clause bindings
-    for binding in bindings {
-        query_builder.push_bind(binding);
-    }
-
-    // Add LIMIT and OFFSET
-    query_builder.push_bind(limit);
-    query_builder.push_bind(offset);
-
-    println!("{}", query_builder.sql());
-
+    // Execute the query
     let rows = query_builder.build().fetch_all(&pool).await?;
 
     let mut results = Vec::new();
@@ -248,32 +183,6 @@ where
     }
 
     Ok((total_count, results))
-}
-
-
-
-pub async fn get_products(filters: DefaultQuery) -> Vec<Product> {
-    let pool = create_pool().await;
-    let mut query = sqlx::QueryBuilder::new(
-        "SELECT id, name, sku, provider, active FROM shop_module_product WHERE 1=1"
-    );
-
-    if let Some(search) = filters.search {
-        query.push(" AND name ILIKE ");
-        query.push_bind(format!("%{}%", search));
-    }
-
-    if let Some(provider) = filters.provider {
-        if !provider.is_empty() {
-            query.push(" AND provider = ");
-            query.push_bind(provider);
-        }
-    }
-    query.push(";");
-    query.build_query_as::<Product>()
-         .fetch_all(&pool)
-         .await
-         .unwrap_or(Vec::new())
 }
 
 pub async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<Json<FileContentResponse>, (StatusCode, String)> {
@@ -426,7 +335,7 @@ pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String
         let msisdn = record.msisdn.unwrap_or_else(|| "MSISDN".to_owned() + iccid);
         let qr_code = record.qr_code.unwrap_or("".to_string());
 
-        let mut query = sqlx::QueryBuilder::new(
+        let mut query = QueryBuilder::new(
             "INSERT INTO api_simidmapper(imsi, iccid, msisdn, qr_code, esim, synced, active, updated, created, assigned, joytel_pin, provider) VALUES (",
         );
         let now = DateTime::<Utc>::from_timestamp(Local::now().timestamp(), 0);
@@ -451,7 +360,7 @@ pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String
         }
 
         // add data into Sim table as well
-        let mut sim_query = sqlx::QueryBuilder::new(
+        let mut sim_query = QueryBuilder::new(
             "INSERT INTO api_sim(sim_id, sim_serial, sim_number, qr_code, esim, active, subscribed, \
              use_fup_code, sent_email,
              created_time, provider) VALUES (",
