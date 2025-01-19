@@ -1,16 +1,16 @@
 use crate::serializers::*;
 use axum::extract::{Multipart, Query};
 use axum::Json;
+use chrono::{DateTime, Local, Utc};
 use csv::ReaderBuilder;
 use http::StatusCode;
-use sqlx::{postgres::PgPoolOptions, FromRow, Pool, Postgres, QueryBuilder, Row};
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
-use std::path::Path;
-use std::{fs, io, env};
-use std::collections::HashMap;
-use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgRow;
+use sqlx::{postgres::PgPoolOptions, FromRow, Pool, Postgres, QueryBuilder, Row};
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::path::Path;
+use std::{env, fs, io};
 
 const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
 
@@ -40,7 +40,10 @@ pub struct DynamicFilters {
 }
 
 impl DynamicFilters {
-    pub fn build_where_clause<'a>(&'a self, query_builder: &'a mut QueryBuilder<'a, Postgres>) -> &'a mut QueryBuilder<'a, Postgres> {
+    pub fn build_where_clause<'a>(
+        &'a self,
+        query_builder: &'a mut QueryBuilder<'a, Postgres>,
+    ) -> &'a mut QueryBuilder<'a, Postgres> {
         query_builder.push(" WHERE 1=1");
 
         // Process all dynamic fields except pagination and sorting
@@ -111,7 +114,6 @@ impl DynamicFilters {
         query_builder
     }
 
-
     pub fn get_sort_clause(&self) -> String {
         let sort_by = self.sort_by.as_deref().unwrap_or("created");
         let sort_order = self.sort_order.as_deref().unwrap_or("DESC");
@@ -135,24 +137,22 @@ pub async fn get_data_from_db<T>(
     select_columns: Option<&str>,
 ) -> Result<(i64, Vec<T>), sqlx::Error>
 where
-    T: for<'r> FromRow<'r, PgRow> + Send + Unpin
+    T: for<'r> FromRow<'r, PgRow> + Send + Unpin,
 {
     let columns = select_columns.unwrap_or("*");
     let (limit, offset) = filters.get_pagination();
     let sort_clause = filters.get_sort_clause();
 
     // Start building the query
-    let mut query_builder = QueryBuilder::<Postgres>::new(
-        format!(
-            r#"
+    let mut query_builder = QueryBuilder::<Postgres>::new(format!(
+        r#"
             SELECT {columns},
                    COUNT(*) OVER() as full_count
             FROM {table}
             "#,
-            columns = columns,
-            table = table,
-        )
-    );
+        columns = columns,
+        table = table,
+    ));
 
     // Add WHERE clause and bindings
     let query_builder = filters.build_where_clause(&mut query_builder);
@@ -190,7 +190,9 @@ where
     Ok((total_count, results))
 }
 
-pub async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<Json<FileContentResponse>, (StatusCode, String)> {
+pub async fn get_file_content(
+    Query(query): Query<FileContentQuery>,
+) -> Result<Json<FileContentResponse>, (StatusCode, String)> {
     // Validate and sanitize file path
     let file_directory = ".";
     let file_path = Path::new(file_directory).join(&query.file_name);
@@ -280,8 +282,9 @@ pub async fn get_file_content(Query(query): Query<FileContentQuery>) -> Result<J
     }
 }
 
-
-pub async fn extract_data(mut multipart: Multipart) -> Result<(String, String, bool), (StatusCode, String)> {
+pub async fn extract_data(
+    mut multipart: Multipart,
+) -> Result<(String, String, bool), (StatusCode, String)> {
     fs::create_dir_all("./uploads").map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -294,7 +297,8 @@ pub async fn extract_data(mut multipart: Multipart) -> Result<(String, String, b
     let mut file_path = "".to_string();
 
     while let Some(mut field) = multipart
-        .next_field().await
+        .next_field()
+        .await
         .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
     {
         if field.name() == Some("provider") {
@@ -345,18 +349,31 @@ pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String
         );
         let now = DateTime::<Utc>::from_timestamp(Local::now().timestamp(), 0);
 
-        query.push_bind(imsi.trim()).push(", ")
-            .push_bind(iccid.trim()).push(", ")
-            .push_bind(msisdn.trim()).push(", ")
-            .push_bind(qr_code.trim()).push(", ")
-            .push_bind(esim).push(", ")
-            .push_bind(false).push(", ")
-            .push_bind(true).push(", ")
-            .push_bind(now).push(", ")
-            .push_bind(now).push(", ")
-            .push_bind(false).push(", ")
-            .push_bind("").push(", ")
-            .push_bind(&provider).push(");");
+        query
+            .push_bind(imsi.trim())
+            .push(", ")
+            .push_bind(iccid.trim())
+            .push(", ")
+            .push_bind(msisdn.trim())
+            .push(", ")
+            .push_bind(qr_code.trim())
+            .push(", ")
+            .push_bind(esim)
+            .push(", ")
+            .push_bind(false)
+            .push(", ")
+            .push_bind(true)
+            .push(", ")
+            .push_bind(now)
+            .push(", ")
+            .push_bind(now)
+            .push(", ")
+            .push_bind(false)
+            .push(", ")
+            .push_bind("")
+            .push(", ")
+            .push_bind(&provider)
+            .push(");");
 
         let res = query.build().fetch_optional(&pool).await;
         match res {
@@ -371,17 +388,29 @@ pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String
              created_time, provider) VALUES (",
         );
 
-        sim_query.push_bind(imsi.trim()).push(", ")
-            .push_bind(iccid.trim()).push(", ")
-            .push_bind(msisdn.trim()).push(", ")
-            .push_bind(qr_code.trim()).push(", ")
-            .push_bind(esim).push(", ")
-            .push_bind(true).push(", ")
-            .push_bind(false).push(", ")
-            .push_bind(false).push(", ")
-            .push_bind(false).push(", ")
-            .push_bind(now).push(", ")
-            .push_bind(&provider).push(");");
+        sim_query
+            .push_bind(imsi.trim())
+            .push(", ")
+            .push_bind(iccid.trim())
+            .push(", ")
+            .push_bind(msisdn.trim())
+            .push(", ")
+            .push_bind(qr_code.trim())
+            .push(", ")
+            .push_bind(esim)
+            .push(", ")
+            .push_bind(true)
+            .push(", ")
+            .push_bind(false)
+            .push(", ")
+            .push_bind(false)
+            .push(", ")
+            .push_bind(false)
+            .push(", ")
+            .push_bind(now)
+            .push(", ")
+            .push_bind(&provider)
+            .push(");");
 
         let sim_res = sim_query.build().fetch_optional(&pool).await;
         match sim_res {
@@ -390,7 +419,6 @@ pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String
         }
     }
 }
-
 
 // Efficient line counting and searching
 pub fn count_lines_and_search(
