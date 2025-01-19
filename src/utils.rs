@@ -129,6 +129,7 @@ impl DynamicFilters {
 }
 
 pub async fn get_data_from_db<T>(
+    pool: Pool<Postgres>,
     filters: DynamicFilters,
     table: &str,
     select_columns: Option<&str>,
@@ -136,7 +137,6 @@ pub async fn get_data_from_db<T>(
 where
     T: for<'r> FromRow<'r, PgRow> + Send + Unpin
 {
-    let pool = create_pool().await;
     let columns = select_columns.unwrap_or("*");
     let (limit, offset) = filters.get_pagination();
     let sort_clause = filters.get_sort_clause();
