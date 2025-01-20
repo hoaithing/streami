@@ -1,25 +1,11 @@
+use std::env;
 use chrono::{DateTime, Utc};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize};
 use serde_json::{json, Value};
-use std::env;
-use std::fmt::{Display, Formatter};
 use std::time::Duration;
-use thiserror::Error;
-use log::{info, warn, error};
-
-// Custom error type
-#[derive(Error, Debug)]
-pub enum SparkError {
-    #[error("Environment variable not set: {0}")]
-    EnvVarError(String),
-    #[error("Network error: {0}")]
-    NetworkError(#[from] reqwest::Error),
-    #[error("Invalid response: {0}")]
-    ResponseError(String),
-    #[error("API error: {code} - {message}")]
-    ApiError { code: String, message: String },
-}
+use log::{info, warn};
+use crate::sparks::serializers::{ApiResponse, Package, SimInfo, SparkError};
 
 // Configuration struct
 #[derive(Debug, Clone)]
@@ -42,98 +28,6 @@ impl Default for SparkConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum BitrateMap {
-    KB128,
-    KB256,
-    KB384,
-    KB512,
-    KB1024,
-    KB3072,
-    KB5120,
-    KB7680,
-    KB10240,
-    KB20480,
-    Unlimited,
-}
-
-impl BitrateMap {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Self::KB128 => "KB_128",
-            Self::KB256 => "KB_256",
-            Self::KB384 => "KB_384",
-            Self::KB512 => "KB_512",
-            Self::KB1024 => "KB_1024",
-            Self::KB3072 => "KB_3072",
-            Self::KB5120 => "KB_5120",
-            Self::KB7680 => "KB_7680",
-            Self::KB10240 => "KB_10240",
-            Self::KB20480 => "KB_20480",
-            Self::Unlimited => "UNLIMITED",
-        }
-    }
-}
-
-
-impl Display for BitrateMap {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({})", self.as_str())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum StatusMap {
-    Active,
-    Inactive,
-    Disconnected,
-    Suspended,
-    EndOfLife,
-}
-
-impl StatusMap {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Self::Active => "ACTIVE",
-            Self::Inactive => "INACTIVE",
-            Self::Disconnected => "DISCONNECTED",
-            Self::Suspended => "SUSPENDED",
-            Self::EndOfLife => "END_OF_LIFE",
-        }
-    }
-}
-
-impl Display for StatusMap {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({})", self.as_str())
-    }
-}
-
-// Response types
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ApiResponse<T> {
-    pub success: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<T>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SimInfo {
-    pub subscriber_id: String,
-    pub imsi: String,
-    pub status: StatusMap,
-    pub balance: f64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Package {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub price: f64,
-}
 
 pub struct SparkClient {
     config: SparkConfig,
@@ -244,7 +138,7 @@ impl SparkClient {
         });
         self.fetch(data, None).await
     }
-
+    
     pub async fn get_sim_info(&self, imsi: &str) -> Result<ApiResponse<SimInfo>, SparkError> {
         let data = json!({
             Self::GET_SIM_INFO: {
@@ -347,7 +241,7 @@ impl SparkClient {
         self.fetch(data, Some(Self::REMOVE_ALL_PACKAGES)).await
     }
 
-    pub async fn get_list_packages(&self) -> Result<ApiResponse<Package>, SparkError> {
+    pub async fn get_list_packages(&self) -> Result<ApiResponse<Vec<Package>>, SparkError> {
         let data = json!({
             Self::LIST_PACKAGES: {}
         });
@@ -386,49 +280,3 @@ impl SparkClient {
         self
     }
 }
-
-// Example usage
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_spark_client() -> Result<(), SparkError> {
-        let client = SparkClient::new(None)?
-            .with_timeout(Duration::from_secs(60))
-            .with_max_retries(5);
-
-        let sim_info = client.get_sim_info("123456789").await?;
-        assert!(sim_info.success);
-
-        Ok(())
-    }
-}
-
-// Example of how to use the improved client:
-/*
-#[tokio::main]
-async fn main() -> Result<(), SparkError> {
-    // Create a custom configuration
-    let config = SparkConfig {
-        api_token: "your_token".to_string(),
-        base_url: "https://custom-url.com".to_string(),
-        timeout: Duration::from_secs(60),
-        max_retries: 5,
-    };
-
-    // Initialize client with custom config
-    let client = SparkClient::new(Some(config))?;
-
-    // Or use default configuration with builder pattern
-    let client = SparkClient::new(None)?
-        .with_timeout(Duration::from_secs(60))
-        .with_max_retries(5);
-
-    // Get SIM information
-    let sim_info = client.get_sim_info("123456789").await?;
-    println!("{:?}", sim_info);
-
-    Ok(())
-}
-*/
