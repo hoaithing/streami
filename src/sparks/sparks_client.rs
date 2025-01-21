@@ -1,7 +1,7 @@
 use std::env;
 use chrono::{DateTime, Utc};
 use reqwest::Client;
-use serde::{Deserialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::Duration;
 use log::{info, warn};
@@ -57,13 +57,13 @@ impl SparkClient {
     async fn fetch<T: for<'de> Deserialize<'de>>(
         &self,
         data: Value,
-        uri: Option<&str>,
+        uri: &str,
     ) -> Result<ApiResponse<T>, SparkError> {
         let mut retries = 0;
         let url = format!("{}?token={}", self.config.base_url, self.config.api_token);
 
         loop {
-            info!("[Spark] Fetching: {} Data: {}", uri.unwrap_or(""), data);
+            info!("[Spark] Fetching: {} Data: {}", uri, data);
 
             match self.client
                 .post(&url)
@@ -75,23 +75,18 @@ impl SparkClient {
                 Ok(response) => {
                     let status = response.status();
                     if !status.is_success() {
-                        return Err(SparkError::ResponseError(format!(
-                            "HTTP error: {}",
-                            status
-                        )));
+                        return Err(SparkError::ResponseError(format!("HTTP error: {}", status)));
                     }
 
-                    let response_json: Value = response.json().await
-                        .map_err(SparkError::NetworkError)?;
+                    let response_json: Value = response.json().await.map_err(SparkError::NetworkError)?;
 
                     if let Some(status) = response_json.get("status") {
                         return if status["code"].as_str() == Some("0") {
-                            if let Some(uri_str) = uri {
-                                if let Some(data) = response_json.get(uri_str) {
+                            if !uri.is_empty() {
+                                if let Some(data) = response_json.get(uri) {
                                     return Ok(ApiResponse {
                                         success: true,
-                                        data: Some(serde_json::from_value(data.clone())
-                                            .map_err(|e| SparkError::ResponseError(e.to_string()))?),
+                                        data: Some(serde_json::from_value(data.clone()).map_err(|e| SparkError::ResponseError(e.to_string()))?),
                                         error: None,
                                     });
                                 }
@@ -113,7 +108,8 @@ impl SparkClient {
                 Err(e) if retries < self.config.max_retries => {
                     warn!("Request failed, retrying ({}/{}): {}", retries + 1, self.config.max_retries, e);
                     retries += 1;
-                    tokio::time::sleep(Duration::from_secs(2u64.pow(retries))).await;
+                    // sleep 1 sec before retry
+                    tokio::time::sleep(Duration::from_secs(1)).await;
                     continue;
                 }
                 Err(e) => return Err(SparkError::NetworkError(e)),
@@ -136,7 +132,7 @@ impl SparkClient {
                 "description": description
             }
         });
-        self.fetch(data, None).await
+        self.fetch(data, "").await
     }
     
     pub async fn get_sim_info(&self, imsi: &str) -> Result<ApiResponse<SimInfo>, SparkError> {
@@ -146,7 +142,7 @@ impl SparkClient {
                 "onlySubsInfo": true
             }
         });
-        self.fetch(data, Some(Self::GET_SIM_INFO)).await
+        self.fetch(data, Self::GET_SIM_INFO).await
     }
 
     pub async fn assign_package(
@@ -183,7 +179,7 @@ impl SparkClient {
                 }
             }),
         };
-        self.fetch(data, Some(Self::ASSIGN_PACKAGE)).await
+        self.fetch(data, Self::ASSIGN_PACKAGE).await
     }
 
     pub async fn assign_daily_package(
@@ -213,7 +209,7 @@ impl SparkClient {
                 }
             }),
         };
-        self.fetch(data, Some(Self::ASSIGN_DAILY_PACKAGE)).await
+        self.fetch(data, Self::ASSIGN_DAILY_PACKAGE).await
     }
 
     pub async fn change_sim_number(
@@ -229,7 +225,7 @@ impl SparkClient {
                 "phoneNumber": sim_number
             }
         });
-        self.fetch(data, None).await
+        self.fetch(data, "").await
     }
 
     pub async fn expire_all_package(&self, imsi: &str) -> Result<ApiResponse<Package>, SparkError> {
@@ -238,14 +234,14 @@ impl SparkClient {
                 "imsi": imsi
             }
         });
-        self.fetch(data, Some(Self::REMOVE_ALL_PACKAGES)).await
+        self.fetch(data, Self::REMOVE_ALL_PACKAGES).await
     }
 
     pub async fn get_list_packages(&self) -> Result<ApiResponse<Vec<Package>>, SparkError> {
         let data = json!({
             Self::LIST_PACKAGES: {}
         });
-        self.fetch(data, Some(Self::LIST_PACKAGES)).await
+        self.fetch(data, Self::LIST_PACKAGES).await
     }
 
     pub async fn get_sim_packages(&self, imsi: &str) -> Result<ApiResponse<Package>, SparkError> {
@@ -254,14 +250,14 @@ impl SparkClient {
                 "imsi": imsi
             }
         });
-        self.fetch(data, Some(Self::GET_SIM_PACKAGES)).await
+        self.fetch(data, Self::GET_SIM_PACKAGES).await
     }
 
     pub async fn get_esim_history(&self, sim_id: &str) -> Result<ApiResponse<Package>, SparkError> {
         let data = json!({
             "getSimProviderStatus": sim_id
         });
-        self.fetch(data, None).await
+        self.fetch(data, "").await
     }
 
     // Implementing a builder pattern for configuration
