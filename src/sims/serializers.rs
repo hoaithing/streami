@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use std::fmt::Display;
-use std::io;
+
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct DefaultQuery {
@@ -9,19 +8,6 @@ pub struct DefaultQuery {
     pub page_size: Option<i64>,
     pub search: Option<String>,
     pub provider: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub struct FileContentQuery {
-    pub file_name: String,
-    pub line: Option<usize>,
-    pub num_lines: Option<usize>,
-    pub search: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct FileContentResponse {
-    pub content: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, FromRow)]
@@ -66,28 +52,6 @@ pub struct PaginatedResponse<T: Serialize> {
     pub results: Vec<T>,
 }
 
-pub type SearchResult = io::Result<(usize, Option<Vec<(usize, String)>>)>;
-
-#[derive(Debug, Deserialize)]
-pub struct CsvData {
-    pub imsi: Option<String>,
-    pub iccid: String,
-    pub msisdn: Option<String>,
-    pub qr_code: Option<String>,
-}
-
-impl Display for CsvData {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}, {}, {}, {}",
-            self.imsi.clone().unwrap_or("".to_string()),
-            self.iccid,
-            self.msisdn.clone().unwrap_or("".to_string()),
-            self.qr_code.clone().unwrap_or("".to_string())
-        )
-    }
-}
 
 #[derive(Serialize, Deserialize)]
 pub enum XploriStatusCode {

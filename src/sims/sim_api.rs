@@ -1,9 +1,10 @@
-use crate::constants::{TABLE_PRODUCT, TABLE_SIM};
-use crate::serializers::{CustomResponse, PaginatedResponse, Product, Sim};
-use crate::utils::{extract_data, get_data_from_db, save_csv_data_to_db, DynamicFilters};
+use crate::utils::{extract_data, save_csv_data_to_db};
 use axum::extract::{Multipart, Query, State};
 use axum::{debug_handler, Json};
 use sqlx::{Pool, Postgres};
+use crate::sims::constants::{TABLE_PRODUCT, TABLE_SIM};
+use crate::sims::serializers::{CustomResponse, PaginatedResponse, Product, Sim};
+use crate::sims::utils::{get_data_from_db, DynamicFilters};
 
 pub async fn get_sims_api(
     State(pool): State<Pool<Postgres>>,
@@ -62,7 +63,7 @@ pub async fn list_product_api(
 // Handler for file upload
 #[debug_handler]
 pub async fn upload(
-    _pool: axum::extract::State<Pool<Postgres>>,
+    _pool: State<Pool<Postgres>>,
     multipart: Multipart,
 ) -> Json<CustomResponse> {
     let data = extract_data(multipart).await;

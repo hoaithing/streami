@@ -1,0 +1,181 @@
+use serde::{Deserialize, Serialize};
+use sqlx::postgres::PgRow;
+use sqlx::{postgres::PgPoolOptions, FromRow, Pool, Postgres, QueryBuilder, Row};
+use std::collections::HashMap;
+use std::env;
+
+pub async fn create_pool() -> Pool<Postgres> {
+    let database_env = env::var("DATABASE_URL");
+    if database_env.is_ok() {
+        PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&database_env.unwrap())
+            .await
+            .expect("Failed to create pool")
+    } else {
+        panic!("{:?}", database_env.unwrap());
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DynamicFilters {
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
+    pub sort_by: Option<String>,
+    pub sort_order: Option<String>,
+    pub esim: Option<bool>,
+    pub active: Option<bool>,
+    #[serde(flatten)]
+    pub fields: HashMap<String, String>,
+}
+
+impl DynamicFilters {
+    pub fn build_where_clause<'a>(
+        &'a self,
+        query_builder: &'a mut QueryBuilder<'a, Postgres>,
+    ) -> &'a mut QueryBuilder<'a, Postgres> {
+        query_builder.push(" WHERE 1=1");
+
+        // Process all dynamic fields except pagination and sorting
+        for (key, value) in self.fields.iter() {
+            // Skip pagination and sorting parameters
+            if value.is_empty() {
+                continue;
+            }
+            if !["page", "page_size", "sort_by", "sort_order"].contains(&key.as_str()) {
+                // Handle different operators in the field name
+                if key.contains("__") {
+                    let parts: Vec<&str> = key.split("__").collect();
+                    let field_name = parts[0];
+                    let operator = parts[1];
+
+                    match operator {
+                        "like" => {
+                            query_builder.push(format!(" AND {} ILIKE ", field_name));
+                            query_builder.push_bind(format!("%{}%", value));
+                        }
+                        "gt" => {
+                            query_builder.push(format!(" AND {} > ", field_name));
+                            query_builder.push_bind(value);
+                        }
+                        "lt" => {
+                            query_builder.push(format!(" AND {} < ", field_name));
+                            query_builder.push_bind(value);
+                        }
+                        "gte" => {
+                            query_builder.push(format!(" AND {} >= ", field_name));
+                            query_builder.push_bind(value);
+                        }
+                        "lte" => {
+                            query_builder.push(format!(" AND {} <= ", field_name));
+                            query_builder.push_bind(value);
+                        }
+                        "in" => {
+                            let values: Vec<&str> = value.split(',').collect();
+                            if !values.is_empty() {
+                                query_builder.push(format!(" AND {} IN (", field_name));
+                                let mut separated = query_builder.separated(", ");
+                                for value in values {
+                                    separated.push_bind(value.trim().to_string());
+                                }
+                                separated.push_unseparated(")");
+                            }
+                        }
+                        _ => {
+                            query_builder.push(format!(" AND {} = ", field_name));
+                            query_builder.push_bind(value);
+                        }
+                    }
+                } else {
+                    // Default to exact match if no operator is specified
+                    query_builder.push(format!(" AND {} = ", key));
+                    query_builder.push_bind(value);
+                }
+            }
+        }
+        if let Some(esim) = self.esim {
+            query_builder.push(" AND esim = ");
+            query_builder.push_bind(esim);
+        }
+        if let Some(active) = self.active {
+            query_builder.push(" AND active = ");
+            query_builder.push_bind(active);
+        }
+        query_builder
+    }
+
+    pub fn get_sort_clause(&self) -> String {
+        let sort_by = self.sort_by.as_deref().unwrap_or("created");
+        let sort_order = self.sort_order.as_deref().unwrap_or("DESC");
+
+        format!(" ORDER BY {} {}", sort_by, sort_order)
+    }
+
+    pub fn get_pagination(&self) -> (i64, i64) {
+        let page_size = self.page_size.unwrap_or(50);
+        let page = self.page.unwrap_or(1);
+        let offset = (page - 1) * page_size;
+
+        (page_size, offset)
+    }
+}
+
+pub async fn get_data_from_db<T>(
+    pool: Pool<Postgres>,
+    filters: DynamicFilters,
+    table: &str,
+    select_columns: Option<&str>,
+) -> Result<(i64, Vec<T>), sqlx::Error>
+where
+    T: for<'r> FromRow<'r, PgRow> + Send + Unpin,
+{
+    let columns = select_columns.unwrap_or("*");
+    let (limit, offset) = filters.get_pagination();
+    let sort_clause = filters.get_sort_clause();
+
+    // Start building the query
+    let mut query_builder = QueryBuilder::<Postgres>::new(format!(
+        r#"
+            SELECT {columns},
+                   COUNT(*) OVER() as full_count
+            FROM {table}
+            "#,
+        columns = columns,
+        table = table,
+    ));
+
+    // Add WHERE clause and bindings
+    let query_builder = filters.build_where_clause(&mut query_builder);
+
+    // Add sorting
+    query_builder.push(&sort_clause);
+
+    // Add LIMIT and OFFSET
+    query_builder.push(" LIMIT ");
+    query_builder.push_bind(limit);
+    query_builder.push(" OFFSET ");
+    query_builder.push_bind(offset);
+    query_builder.push(";");
+
+    // Debug: Print the SQL query
+    // println!("Query SQL: {}", query_builder.sql());
+
+    // Execute the query
+    let rows = query_builder.build().fetch_all(&pool).await?;
+
+    let mut results = Vec::new();
+    let mut total_count = 0;
+
+    // Process results
+    if let Some(first_row) = rows.first() {
+        total_count = first_row.try_get("full_count").unwrap_or(0);
+    }
+
+    for row in rows {
+        if let Ok(item) = T::from_row(&row) {
+            results.push(item);
+        }
+    }
+
+    Ok((total_count, results))
+}
