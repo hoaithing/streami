@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -81,4 +82,19 @@ impl Default for CustomResponse {
             status: XploriStatusCode::Success,
         }
     }
+}
+
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DynamicFilters {
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
+    pub sort_by: Option<String>,
+    pub sort_order: Option<String>,
+    pub esim: Option<bool>,
+    pub active: Option<bool>,
+    pub search: Option<String>,
+    pub search_fields: Option<Vec<String>>,
+    #[serde(flatten)]
+    pub fields: HashMap<String, String>,
 }

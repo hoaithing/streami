@@ -3,12 +3,12 @@ use axum::extract::{Multipart, Query, State};
 use axum::{debug_handler, Json};
 use sqlx::{Pool, Postgres};
 use crate::sims::constants::{TABLE_PRODUCT, TABLE_SIM};
-use crate::sims::serializers::{CustomResponse, PaginatedResponse, Product, Sim};
-use crate::sims::utils::{get_data_from_db, DynamicFilters};
+use crate::sims::serializers::{CustomResponse, DynamicFilters, PaginatedResponse, Product, Sim};
+use crate::sims::utils::{get_data_from_db};
 
 pub async fn get_sims_api(
     State(pool): State<Pool<Postgres>>,
-    Query(filters): Query<DynamicFilters>,
+    Query(mut filters): Query<DynamicFilters>,
 ) -> Json<PaginatedResponse<Sim>> {
     let select_columns = [
         "id",
@@ -20,13 +20,16 @@ pub async fn get_sims_api(
         "status",
         "provider",
     ];
+
+    filters.search_fields = Some(vec!["sim_id".to_string(), "sim_serial".to_string()]);
+
     let results = get_data_from_db::<Sim>(
         pool,
         filters,
         TABLE_SIM,
         Some(select_columns.join(",").as_str()),
-    )
-    .await;
+    ).await;
+
     if let Ok((total, sims)) = results {
         Json(PaginatedResponse {
             total,
@@ -43,8 +46,9 @@ pub async fn get_sims_api(
 
 pub async fn list_product_api(
     State(pool): State<Pool<Postgres>>,
-    Query(filters): Query<DynamicFilters>,
+    Query(mut filters): Query<DynamicFilters>,
 ) -> Json<PaginatedResponse<Product>> {
+    filters.search_fields = Some(vec!["name".to_string(), "sku".to_string()]);
     let results = get_data_from_db::<Product>(pool, filters, TABLE_PRODUCT, None).await;
     if let Ok((total, products)) = results {
         Json(PaginatedResponse {

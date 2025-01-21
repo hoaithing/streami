@@ -1,8 +1,7 @@
-use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgRow;
 use sqlx::{postgres::PgPoolOptions, FromRow, Pool, Postgres, QueryBuilder, Row};
-use std::collections::HashMap;
 use std::env;
+use crate::sims::serializers::DynamicFilters;
 
 pub async fn create_pool() -> Pool<Postgres> {
     let database_env = env::var("DATABASE_URL");
@@ -17,24 +16,18 @@ pub async fn create_pool() -> Pool<Postgres> {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct DynamicFilters {
-    pub page: Option<i64>,
-    pub page_size: Option<i64>,
-    pub sort_by: Option<String>,
-    pub sort_order: Option<String>,
-    pub esim: Option<bool>,
-    pub active: Option<bool>,
-    #[serde(flatten)]
-    pub fields: HashMap<String, String>,
-}
-
 impl DynamicFilters {
-    pub fn build_where_clause<'a>(
-        &'a self,
-        query_builder: &'a mut QueryBuilder<'a, Postgres>,
-    ) -> &'a mut QueryBuilder<'a, Postgres> {
+    pub fn build_where_clause<'a>(&'a self, query_builder: &'a mut QueryBuilder<'a, Postgres>) -> &'a mut QueryBuilder<'a, Postgres> {
         query_builder.push(" WHERE 1=1");
+
+        if let Some(search) = &self.search {
+            if let Some(search_fields) = &self.search_fields {
+                for field in search_fields {
+                    query_builder.push(format!(" AND {} ILIKE ", field));
+                    query_builder.push_bind(format!("%{}%", search));
+                }
+            }
+        }
 
         // Process all dynamic fields except pagination and sorting
         for (key, value) in self.fields.iter() {
@@ -42,7 +35,7 @@ impl DynamicFilters {
             if value.is_empty() {
                 continue;
             }
-            if !["page", "page_size", "sort_by", "sort_order"].contains(&key.as_str()) {
+            if !["page", "page_size", "sort_by", "sort_order", "search"].contains(&key.as_str()) {
                 // Handle different operators in the field name
                 if key.contains("__") {
                     let parts: Vec<&str> = key.split("__").collect();
@@ -50,10 +43,6 @@ impl DynamicFilters {
                     let operator = parts[1];
 
                     match operator {
-                        "like" => {
-                            query_builder.push(format!(" AND {} ILIKE ", field_name));
-                            query_builder.push_bind(format!("%{}%", value));
-                        }
                         "gt" => {
                             query_builder.push(format!(" AND {} > ", field_name));
                             query_builder.push_bind(value);
