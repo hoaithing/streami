@@ -125,10 +125,10 @@ where
     // Start building the query
     let mut query_builder = QueryBuilder::<Postgres>::new(format!(
         r#"
-            SELECT {columns},
-                   COUNT(*) OVER() as full_count
+        WITH data AS (
+            SELECT {columns}
             FROM {table}
-            "#,
+        "#,
         columns = columns,
         table = table,
     ));
@@ -144,11 +144,30 @@ where
     query_builder.push_bind(limit);
     query_builder.push(" OFFSET ");
     query_builder.push_bind(offset);
-    query_builder.push(";");
+    query_builder.push(")");
+
+    let column_list: Vec<&str> = columns.split(",").collect();
+
+    let mut f = String::new();
+    for (index, column) in column_list.clone().into_iter().enumerate() {
+        f.push_str("data.");
+        f.push_str(column);
+        if index < column_list.len() - 1 {
+            f.push(',');
+        }
+    }
+    query_builder.push(format!(
+        r#"
+        SELECT
+            (SELECT COUNT(*) FROM {table}) AS total_count, {f}
+        FROM data;
+        "#,
+        table = table,
+        f=f)
+    );
 
     // Debug: Print the SQL query
     // println!("Query SQL: {}", query_builder.sql());
-
     // Execute the query
     let rows = query_builder.build().fetch_all(&pool).await?;
 
@@ -157,7 +176,7 @@ where
 
     // Process results
     if let Some(first_row) = rows.first() {
-        total_count = first_row.try_get("full_count").unwrap_or(0);
+        total_count = first_row.try_get("total_count").unwrap_or(0);
     }
 
     for row in rows {
