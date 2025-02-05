@@ -64,14 +64,13 @@ impl SparkClient {
 
         loop {
             info!("[Spark] Fetching: {} Data: {}", uri, data);
-
-            match self.client
+            let resp = self.client
                 .post(&url)
                 .json(&data)
                 .header("Content-Type", "application/json")
                 .send()
-                .await
-            {
+                .await;
+            match resp {
                 Ok(response) => {
                     let status = response.status();
                     if !status.is_success() {

@@ -29,21 +29,6 @@ pub async fn add_sim_credit(
     Json(result)
 }
 
-// pub async fn set_bitrate(
-//     State(state): State<Arc<AppState>>,
-//     Json(req): Json<SetBitrateRequest>,
-// ) -> Json<ApiResponse<()>> {
-//     let result = state
-//         .spark_client
-//         .set_bitrate(&req.imsi, req.bitrate)
-//         .await
-//         .unwrap_or_else(|e| ApiResponse {
-//             success: false,
-//             data: None,
-//             error: Some(e.to_string()),
-//         });
-//     Json(result)
-// }
 
 pub async fn get_sim_info(
     State(state): State<Arc<AppState>>,
@@ -123,7 +108,6 @@ pub async fn get_list_packages(
         });
     Json(result)
 }
-
 
 pub async fn get_esim_history(
     State(state): State<Arc<AppState>>,
