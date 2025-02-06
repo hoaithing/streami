@@ -9,15 +9,15 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use streami::sparks::sparks_client::SparkClient;
 
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{Request, Response, Status};
 
-pub mod hello {
-    tonic::include_proto!("hello");
+pub mod example {
+    tonic::include_proto!("example");
 }
 
-
-use example::greeter_server::{Greeter, GreeterServer};
+use example::greeter_server::Greeter;
 use example::{HelloRequest, HelloResponse};
+
 #[derive(Default)]
 pub struct MyGreeter {}
 
