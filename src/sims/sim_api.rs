@@ -4,7 +4,7 @@ use axum::{debug_handler, Json};
 use sqlx::{Pool, Postgres};
 use crate::sims::constants::{TABLE_PRODUCT, TABLE_SIM};
 use crate::sims::serializers::{CustomResponse, DynamicFilters, PaginatedResponse, Product, Sim};
-use crate::sims::utils::{get_data_from_db};
+use crate::sims::utils::get_data_from_db;
 
 pub async fn get_sims_api(
     State(pool): State<Pool<Postgres>>,
@@ -23,7 +23,7 @@ pub async fn get_sims_api(
 
     filters.search_fields = Some(vec!["sim_id".to_string(), "sim_serial".to_string()]);
 
-    let results = get_data_from_db::<Sim>(
+    let results= get_data_from_db::<Sim>(
         pool,
         filters,
         TABLE_SIM,
@@ -64,7 +64,6 @@ pub async fn list_product_api(
     }
 }
 
-// Handler for file upload
 #[debug_handler]
 pub async fn upload(
     _pool: State<Pool<Postgres>>,
