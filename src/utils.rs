@@ -34,7 +34,7 @@ pub async fn create_pool() -> Pool<Postgres> {
             .await
             .expect("Failed to create pool")
     } else {
-        panic!("{:?}", database_env.unwrap());
+        panic!("DATABASE_URL not present");
     }
 }
 

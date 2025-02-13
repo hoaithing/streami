@@ -9,32 +9,6 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use streami::sparks::sparks_client::SparkClient;
 
-use tonic::{Request, Response, Status};
-
-pub mod example {
-    tonic::include_proto!("example");
-}
-
-use example::greeter_server::Greeter;
-use example::{HelloRequest, HelloResponse};
-
-#[derive(Default)]
-pub struct MyGreeter {}
-
-#[tonic::async_trait]
-impl Greeter for MyGreeter {
-    async fn say_hello(
-        &self,
-        request: Request<HelloRequest>,
-    ) -> Result<Response<HelloResponse>, Status> {
-        let reply = HelloResponse {
-            message: format!("Hello {}!", request.into_inner().name),
-        };
-        Ok(Response::new(reply))
-    }
-}
-
-
 
 #[tokio::main]
 async fn main() {
