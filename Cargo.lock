@@ -2020,7 +2020,6 @@ dependencies = [
  "chrono",
  "csv",
  "http",
- "log",
  "reqwest",
  "sanitize-filename",
  "serde",
@@ -2031,7 +2030,6 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-appender",
- "tracing-log",
  "tracing-subscriber",
 ]
 
