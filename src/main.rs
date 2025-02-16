@@ -23,11 +23,10 @@ pub fn setup_logging() -> WorkerGuard {
         let env_filter = EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| EnvFilter::new("info"));
         let fmt_layer = fmt::layer()
-            .with_file(false)
+            .with_file(true)
             .with_thread_ids(false)
             .with_thread_names(false)
-            .with_file(false)
-            .with_line_number(false);
+            .with_line_number(true);
             // .pretty();
 
         if let Err(e) = tracing_subscriber::registry()
