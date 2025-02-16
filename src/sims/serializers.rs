@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::FromRow;
 
 
@@ -70,15 +71,15 @@ pub enum XploriStatusCode {
 #[derive(Serialize, Deserialize)]
 pub struct CustomResponse {
     pub message: String,
-    pub data: Option<String>,
     pub status: XploriStatusCode,
+    pub data: Value,
 }
 
 impl Default for CustomResponse {
     fn default() -> Self {
         Self {
             message: "".to_string(),
-            data: None,
+            data: Value::Null,
             status: XploriStatusCode::Success,
         }
     }

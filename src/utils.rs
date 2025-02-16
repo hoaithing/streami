@@ -198,9 +198,11 @@ impl Display for CsvData {
 }
 
 
-pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String) {
+pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String) -> (i32, i32) {
     let pool = create_pool().await;
     let data = fs::read_to_string(file_path.clone()).unwrap();
+    let mut success = 0;
+    let mut errors = 0;
     let mut rdr = ReaderBuilder::new()
         .has_headers(false)
         .from_reader(data.as_bytes());
@@ -257,7 +259,7 @@ pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String
         let mut sim_query = QueryBuilder::new(
             "INSERT INTO api_sim(sim_id, sim_serial, sim_number, qr_code, esim, active, subscribed, \
              use_fup_code, sent_email,
-             created_time, provider) VALUES (",
+             created, provider) VALUES (",
         );
 
         sim_query
@@ -286,10 +288,17 @@ pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String
 
         let sim_res = sim_query.build().fetch_optional(&pool).await;
         match sim_res {
-            Ok(row) => println!("Added Sim {:?}", row),
-            Err(msg) => println!("Sim Error: {}", msg),
+            Ok(row) => { 
+                println!("Added Sim {:?}", row);
+                success += 1;
+            },
+            Err(msg) => {
+                println!("Sim Error: {}", msg);
+                errors += 1;
+            }
         }
     }
+    (success, errors)
 }
 
 // Efficient line counting and searching

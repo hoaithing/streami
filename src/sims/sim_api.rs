@@ -1,10 +1,11 @@
+use crate::sims::constants::{TABLE_PRODUCT, TABLE_SIM};
+use crate::sims::serializers::{CustomResponse, DynamicFilters, PaginatedResponse, Product, Sim, XploriStatusCode};
+use crate::sims::utils::get_data_from_db;
 use crate::utils::{extract_data, save_csv_data_to_db};
 use axum::extract::{Multipart, Query, State};
 use axum::{debug_handler, Json};
+use serde_json::json;
 use sqlx::{Pool, Postgres};
-use crate::sims::constants::{TABLE_PRODUCT, TABLE_SIM};
-use crate::sims::serializers::{CustomResponse, DynamicFilters, PaginatedResponse, Product, Sim};
-use crate::sims::utils::get_data_from_db;
 
 pub async fn get_sims_api(
     State(pool): State<Pool<Postgres>>,
@@ -74,6 +75,13 @@ pub async fn upload(
         return Json(CustomResponse::default());
     }
     let (provider, file_path, esim) = data.unwrap();
-    save_csv_data_to_db(file_path, esim, provider).await;
-    Json(CustomResponse::default())
+    let (success, errors) = save_csv_data_to_db(file_path, esim, provider).await;
+    Json(CustomResponse {
+        data: json!({
+            "success": success,
+            "errors": errors,
+        }),
+        message: "sucess".to_string(),
+        status: XploriStatusCode::Success
+    })
 }
