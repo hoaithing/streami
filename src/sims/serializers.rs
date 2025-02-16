@@ -24,8 +24,8 @@ pub struct SimMapper {
     pub synced: bool,
     pub synced_at: Option<String>,
     pub product_name: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created: String,
+    pub updated: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, FromRow)]

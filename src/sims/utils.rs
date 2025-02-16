@@ -1,6 +1,7 @@
 use sqlx::postgres::PgRow;
 use sqlx::{postgres::PgPoolOptions, FromRow, Pool, Postgres, QueryBuilder, Row};
 use std::env;
+use tracing::warn;
 use crate::sims::serializers::DynamicFilters;
 
 pub async fn create_pool() -> Pool<Postgres> {
@@ -21,10 +22,12 @@ impl DynamicFilters {
         query_builder.push(" WHERE 1=1");
 
         if let Some(search) = &self.search {
-            if let Some(search_fields) = &self.search_fields {
-                for field in search_fields {
-                    query_builder.push(format!(" AND {} ILIKE ", field));
-                    query_builder.push_bind(format!("%{}%", search));
+            if !search.is_empty() {
+                if let Some(search_fields) = &self.search_fields {
+                    for field in search_fields {
+                        query_builder.push(format!(" AND {} ILIKE ", field));
+                        query_builder.push_bind(format!("%{}%", search));
+                    }
                 }
             }
         }
@@ -167,7 +170,7 @@ where
     );
 
     // Debug: Print the SQL query
-    // println!("Query SQL: {}", query_builder.sql());
+    // warn!("Query SQL: {}", query_builder.sql());
     // Execute the query
     let rows = query_builder.build().fetch_all(&pool).await?;
 
@@ -180,8 +183,14 @@ where
     }
 
     for row in rows {
-        if let Ok(item) = T::from_row(&row) {
-            results.push(item);
+        let r = T::from_row(&row);
+        match r {
+            Ok(item) => {
+                results.push(item);
+            },
+            Err(e) => {
+                warn!("Deserializer Data error: {}", e);
+            }
         }
     }
 

@@ -10,6 +10,7 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 use streami::sparks::sparks_client::SparkClient;
 use tracing_appender::{non_blocking::NonBlocking, rolling};
 use tracing_appender::non_blocking::WorkerGuard;
+use streami::sales::sale_partner_api::get_sales_partner_api;
 
 pub fn setup_logging() -> WorkerGuard {
     // Only set up logging if it hasn't been set up before
@@ -63,6 +64,7 @@ async fn main() {
         .route("/file", get(get_file_content))
         .route("/sims", get(get_sims_api))
         .route("/products", get(list_product_api))
+        .route("/sales", get(get_sales_partner_api))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .with_state(pool)
         .route("/sim/credit", post(add_sim_credit))
