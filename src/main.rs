@@ -6,7 +6,6 @@ use streami::sparks::sparks_api::{add_sim_credit, assign_daily_package, assign_p
 use streami::utils::{create_pool, get_file_content};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
-use tracing::{span, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use streami::sparks::sparks_client::SparkClient;
 use tracing_appender::{non_blocking::NonBlocking, rolling};
