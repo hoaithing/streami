@@ -4,7 +4,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::Duration;
-use log::{info, warn};
+use tracing::{info, warn};
 use crate::sparks::serializers::{ApiResponse, Package, SimInfo, SparkError};
 
 // Configuration struct

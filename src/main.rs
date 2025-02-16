@@ -6,23 +6,44 @@ use streami::sparks::sparks_api::{add_sim_credit, assign_daily_package, assign_p
 use streami::utils::{create_pool, get_file_content};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use streami::sparks::sparks_client::SparkClient;
+use tracing_appender::{non_blocking::NonBlocking, rolling};
 
+pub fn setup_logging() {
+    // Only set up logging if it hasn't been set up before
+    static INIT: std::sync::Once = std::sync::Once::new();
+    // Set up file appender with rotation
+    let file_appender = rolling::daily("logs", "app.log");
+    let (non_blocking, _guard) = NonBlocking::new(file_appender);
+
+    INIT.call_once(|| {
+        let env_filter = EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new("info"));
+        let fmt_layer = fmt::layer()
+            .with_file(false)
+            .with_thread_ids(false)
+            .with_thread_names(false)
+            .with_file(false)
+            .with_line_number(false)
+            .pretty();
+
+        if let Err(e) = tracing_subscriber::registry()
+            .with(env_filter)
+            .with(fmt_layer)
+            .with(fmt::Layer::new().with_writer(non_blocking))
+            .try_init()
+        {
+            eprintln!("Warning: Failed to initialize tracing subscriber: {}", e);
+        }
+    });
+}
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "example_app=debug,tower_http=debug".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-
+    setup_logging();
     // CORS configuration
     let pool = create_pool().await;
-
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)

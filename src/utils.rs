@@ -167,7 +167,7 @@ pub async fn extract_data(
                 .await
                 .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
             {
-                println!("received {} bytes", chunk.len());
+                tracing::info!("received {} bytes", chunk.len());
                 file.write_all(&chunk).unwrap();
             }
             file.flush().unwrap();
@@ -210,7 +210,7 @@ pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String
     for result in records {
         let record: CsvData = result.unwrap();
         let iccid = record.iccid.trim();
-        println!("ROW: {}", record);
+        tracing::info!("ROW: {}", record);
         if iccid == "iccid" {
             continue;
         }
@@ -251,8 +251,8 @@ pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String
 
         let res = query.build().fetch_optional(&pool).await;
         match res {
-            Ok(row) => println!("Mapper Added {:?}", row),
-            Err(msg) => println!("Mapper Error: {}", msg),
+            Ok(row) => tracing::info!("Mapper Added {:?}", row),
+            Err(msg) => tracing::warn!("Mapper Error: {}", msg),
         }
 
         // add data into Sim table as well
@@ -289,11 +289,11 @@ pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String
         let sim_res = sim_query.build().fetch_optional(&pool).await;
         match sim_res {
             Ok(row) => { 
-                println!("Added Sim {:?}", row);
+                tracing::info!("Added Sim {:?}", row);
                 success += 1;
             },
             Err(msg) => {
-                println!("Sim Error: {}", msg);
+                tracing::warn!("Sim Error: {}", msg);
                 errors += 1;
             }
         }

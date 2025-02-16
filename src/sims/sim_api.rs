@@ -37,7 +37,7 @@ pub async fn get_sims_api(
             results: sims,
         })
     } else {
-        println!("Failed to fetch data from db: {}", results.err().unwrap());
+        tracing::warn!("Failed to fetch data from db: {}", results.err().unwrap());
         Json(PaginatedResponse {
             total: 0,
             results: Vec::new(),
@@ -57,7 +57,7 @@ pub async fn list_product_api(
             results: products,
         })
     } else {
-        println!("Failed to fetch data from db: {}", results.err().unwrap());
+        tracing::warn!("Failed to fetch data from db: {}", results.err().unwrap());
         Json(PaginatedResponse {
             total: 0,
             results: Vec::new(),
