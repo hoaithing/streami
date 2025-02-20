@@ -1,16 +1,16 @@
-use axum::extract::{Multipart, Query};
-use axum::Json;
+use axum::extract::Multipart;
 use chrono::{DateTime, Local, Utc};
 use csv::ReaderBuilder;
 use http::StatusCode;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres, QueryBuilder};
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::io::Write;
 use std::{env, fs, io};
 use std::fmt::Display;
 use serde::{Deserialize, Serialize};
+use calamine::{open_workbook, Xlsx, Reader};
 
 pub type SearchResult = io::Result<(usize, Option<Vec<(usize, String)>>)>;
+
 
 #[derive(Deserialize)]
 pub struct FileContentQuery {
@@ -20,10 +20,12 @@ pub struct FileContentQuery {
     pub search: Option<String>,
 }
 
+
 #[derive(Serialize)]
 pub struct FileContentResponse {
     pub content: Vec<String>,
 }
+
 
 pub async fn create_pool() -> Pool<Postgres> {
     let database_env = env::var("DATABASE_URL");
@@ -38,99 +40,6 @@ pub async fn create_pool() -> Pool<Postgres> {
     }
 }
 
-const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024; // 100 MB limit
-
-pub async fn get_file_content(
-    Query(query): Query<FileContentQuery>,
-) -> Result<Json<FileContentResponse>, (StatusCode, String)> {
-    // Validate and sanitize file path
-    let file_directory = ".";
-    let file_path = Path::new(file_directory).join(&query.file_name);
-
-    // Prevent directory traversal
-    if !file_path.starts_with(file_directory) {
-        return Err((StatusCode::FORBIDDEN, "Invalid file path".to_string()));
-    }
-
-    // Open the file
-    let mut file = match fs::File::open(&file_path) {
-        Ok(f) => f,
-        Err(e) => {
-            return match e.kind() {
-                io::ErrorKind::NotFound => {
-                    Err((StatusCode::NOT_FOUND, "File not found".to_string()))
-                }
-                io::ErrorKind::PermissionDenied => {
-                    Err((StatusCode::FORBIDDEN, "Permission denied".to_string()))
-                }
-                _ => Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Error opening file: {}", e),
-                )),
-            };
-        }
-    };
-
-    // Check file size
-    let file_size = file
-        .metadata()
-        .map_err(|_| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Could not read file metadata".to_string(),
-            )
-        })?
-        .len();
-
-    if file_size > MAX_FILE_SIZE {
-        return Err((StatusCode::PAYLOAD_TOO_LARGE, "File too large".to_string()));
-    }
-
-    // Count lines and search
-    let mut reader = BufReader::new(&file);
-    let (total_lines, search_results) =
-        count_lines_and_search(&mut reader, query.search.as_deref())
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    // Determine start and end lines
-    let num_lines = query.num_lines.unwrap_or(100);
-    let (start_line, _) = if let Some(line) = query.line {
-        // User-specified line
-        let start = line.saturating_sub(1);
-        let end = (start + num_lines).min(total_lines);
-        (start, end)
-    } else if let Some(results) = &search_results {
-        // If search results exist, default to showing search results
-        if !results.is_empty() {
-            // Get the first few search results
-            let start = results[0].0 - 1;
-            let end = (start + num_lines).min(total_lines);
-            (start, end)
-        } else {
-            // Default to last 100 lines
-            let start = total_lines.saturating_sub(num_lines);
-            let end = total_lines;
-            (start, end)
-        }
-    } else {
-        // Default to last 100 lines
-        let start = total_lines.saturating_sub(num_lines);
-        let end = total_lines;
-        (start, end)
-    };
-
-    // Read specific lines range
-    let content = read_lines_range(&mut file, start_line, num_lines)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    if search_results.is_none() {
-        Ok(Json(FileContentResponse { content }))
-    } else {
-        let search_result = search_results.unwrap();
-        let results = search_result.iter().map(|x| x.1.clone()).collect();
-        Ok(Json(FileContentResponse { content: results }))
-    }
-}
 
 pub async fn extract_data(
     mut multipart: Multipart,
@@ -176,6 +85,7 @@ pub async fn extract_data(
     Ok((provider, file_path, esim))
 }
 
+
 #[derive(Debug, Deserialize)]
 pub struct CsvData {
     pub imsi: Option<String>,
@@ -183,6 +93,7 @@ pub struct CsvData {
     pub msisdn: Option<String>,
     pub qr_code: Option<String>,
 }
+
 
 impl Display for CsvData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -301,49 +212,13 @@ pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String
     (success, errors)
 }
 
-// Efficient line counting and searching
-pub fn count_lines_and_search(
-    reader: &mut impl BufRead,
-    search_term: Option<&str>,
-) -> SearchResult {
-    let mut total_lines = 0;
-    let mut search_results = search_term.map(|_| Vec::new());
-    let search_term = search_term.unwrap().to_lowercase().clone();
 
-    for (line_number, line_result) in reader.by_ref().lines().enumerate() {
-        let line = line_result?;
-        total_lines += 1;
-
-        // Search functionality
-        if !&search_term.is_empty() && line.to_lowercase().contains(&search_term) {
-            search_results
-                .as_mut()
-                .unwrap()
-                .push((line_number + 1, line.clone()));
+#[allow(dead_code)]
+fn read_excel(file_path: String) {
+    let mut excel: Xlsx<_> = open_workbook(file_path).unwrap();
+    if let Ok(r) = excel.worksheet_range("Sheet1") {
+        for row in r.rows() {
+            println!("row={:?}, row[0]={:?}", row, row[0]);
         }
     }
-
-    Ok((total_lines, search_results))
-}
-
-// Efficient line retrieval
-pub fn read_lines_range(
-    file: &mut fs::File,
-    start_line: usize,
-    num_lines: usize,
-) -> io::Result<Vec<String>> {
-    file.seek(SeekFrom::Start(0))?;
-    let mut reader = BufReader::new(file);
-
-    // Skip lines before start_line
-    for _ in 0..start_line {
-        reader.by_ref().lines().next();
-    }
-
-    // Read specified number of lines
-    reader.by_ref().lines().take(num_lines).collect()
-}
-
-pub fn get_xplori_token() -> String {
-    "".to_string()
 }

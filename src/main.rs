@@ -3,7 +3,7 @@ use axum::routing::post;
 use axum::{extract::DefaultBodyLimit, routing::get, Router};
 use streami::sims::sim_api::{get_sims_api, list_product_api, upload};
 use streami::sparks::sparks_api::{add_sim_credit, assign_daily_package, assign_package, expire_all_package, get_esim_history, get_list_packages, get_sim_info, AppState};
-use streami::utils::{create_pool, get_file_content};
+use streami::utils::{create_pool};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -61,7 +61,6 @@ async fn main() {
     // Build our application with routes
     let app = Router::new()
         .route("/upload", post(upload))
-        .route("/file", get(get_file_content))
         .route("/sims", get(get_sims_api))
         .route("/products", get(list_product_api))
         .route("/sales", get(get_sales_partner_api))

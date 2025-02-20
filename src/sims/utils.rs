@@ -1,8 +1,8 @@
+use crate::sims::serializers::DynamicFilters;
 use sqlx::postgres::PgRow;
 use sqlx::{postgres::PgPoolOptions, FromRow, Pool, Postgres, QueryBuilder, Row};
 use std::env;
 use tracing::warn;
-use crate::sims::serializers::DynamicFilters;
 
 pub async fn create_pool() -> Pool<Postgres> {
     let database_env = env::var("DATABASE_URL");
@@ -18,7 +18,10 @@ pub async fn create_pool() -> Pool<Postgres> {
 }
 
 impl DynamicFilters {
-    pub fn build_where_clause<'a>(&'a self, query_builder: &'a mut QueryBuilder<'a, Postgres>) -> &'a mut QueryBuilder<'a, Postgres> {
+    pub fn build_where_clause<'a>(
+        &'a self,
+        query_builder: &'a mut QueryBuilder<'a, Postgres>,
+    ) -> &'a mut QueryBuilder<'a, Postgres> {
         query_builder.push(" WHERE 1=1");
 
         if let Some(search) = &self.search {
@@ -166,8 +169,8 @@ where
         FROM data;
         "#,
         table = table,
-        f=f)
-    );
+        f = f
+    ));
 
     // Debug: Print the SQL query
     // warn!("Query SQL: {}", query_builder.sql());
@@ -187,12 +190,11 @@ where
         match r {
             Ok(item) => {
                 results.push(item);
-            },
+            }
             Err(e) => {
                 warn!("Deserializer Data error: {}", e);
             }
         }
     }
-
     Ok((total_count, results))
 }
