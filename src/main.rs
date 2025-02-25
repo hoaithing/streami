@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use axum::routing::post;
 use axum::{extract::DefaultBodyLimit, routing::get, Router};
@@ -11,6 +12,12 @@ use streami::sparks::sparks_client::SparkClient;
 use tracing_appender::{non_blocking::NonBlocking, rolling};
 use tracing_appender::non_blocking::WorkerGuard;
 use streami::sales::sale_partner_api::get_sales_partner_api;
+
+use std::net::SocketAddr;
+use tonic::transport::Server;
+use tracing::warn;
+use streami::greeter::greeter_server::GreeterServer;
+use streami::grpc_service::MyGreeter;
 
 pub fn setup_logging() -> WorkerGuard {
     // Only set up logging if it hasn't been set up before
@@ -58,6 +65,24 @@ async fn main() {
         spark_client: Arc::new(spark_client),
     });
 
+    let greeter = MyGreeter {
+        data: HashMap::from([("test".to_string(), "1".to_string())]),
+    };
+    // Configure gRPC server
+    let grpc_service = GreeterServer::new(greeter);
+    let grpc_addr: Result<SocketAddr, _> = "[::1]:50051".parse();
+    if let Ok(addr) = grpc_addr {
+        tokio::spawn(async move {
+            Server::builder()
+                .add_service(grpc_service)
+                .serve(addr)
+                .await
+                .unwrap();
+        });
+    } else { 
+        warn!("Failed to parse grpc_addr");
+    }
+
     // Build our application with routes
     let app = Router::new()
         .route("/upload", post(upload))
@@ -80,7 +105,7 @@ async fn main() {
         // .route("/sim/packages", post(get_sim_packages))
         .layer(cors)
         .layer(TraceLayer::new_for_http());
-
+    
     // Run it with hyper on localhost:8080
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
     axum::serve(listener, app).await.unwrap();

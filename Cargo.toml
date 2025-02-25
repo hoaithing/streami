@@ -21,6 +21,9 @@ thiserror = "2.0.9"
 tracing-appender = {version = "0.2.3"}
 uuid = { version = "1.13.1", features = ["serde", "v4"] }
 calamine = {version = "0.26.1", features = ["default"]}
+tonic = "0.12.3"
+prost = "0.13.5"
+tower = "0.5.2"
 
 [profile.release]
 opt-level = 3
@@ -33,3 +36,6 @@ opt-level = 0
 debug = false
 split-debuginfo = "unpacked" # Faster recompilation
 incremental = true
+
+[build-dependencies]
+tonic-build = "0.12.3"
