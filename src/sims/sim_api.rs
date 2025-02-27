@@ -75,11 +75,13 @@ pub async fn upload(
         return Json(CustomResponse::default());
     }
     let (provider, file_path, esim) = data.unwrap();
-    let (success, errors) = save_csv_data_to_db(file_path, esim, provider).await;
+    let (m_success, m_error, success, errors) = save_csv_data_to_db(file_path, esim, provider).await;
     Json(CustomResponse {
         data: json!({
             "success": success,
+            "mapper_success": m_success,
             "errors": errors,
+            "mapper_errors": m_error,
         }),
         message: "sucess".to_string(),
         status: XploriStatusCode::Success

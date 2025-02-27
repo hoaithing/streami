@@ -76,7 +76,7 @@ pub async fn extract_data(
                 .await
                 .map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?
             {
-                tracing::info!("received {} bytes", chunk.len());
+                tracing::info!("received {}, with {} bytes", filename, chunk.len());
                 file.write_all(&chunk).unwrap();
             }
             file.flush().unwrap();
@@ -109,13 +109,15 @@ impl Display for CsvData {
 }
 
 
-pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String) -> (i32, i32) {
+pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String) -> (i32, i32, i32, i32) {
     let pool = create_pool().await;
     let data = fs::read_to_string(file_path.clone()).unwrap();
     let mut success = 0;
     let mut errors = 0;
+    let mut mapper_errors = 0;
+    let mut mapper_success = 0;
     let mut rdr = ReaderBuilder::new()
-        .has_headers(false)
+        .has_headers(true)
         .from_reader(data.as_bytes());
     let records = rdr.deserialize();
     for result in records {
@@ -162,15 +164,18 @@ pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String
 
         let res = query.build().fetch_optional(&pool).await;
         match res {
-            Ok(row) => tracing::info!("Mapper Added {:?}", row),
-            Err(msg) => tracing::warn!("Mapper Error: {}", msg),
+            Ok(_) => mapper_success += 1,
+            Err(msg) => {
+                mapper_errors += 1;
+                tracing::warn!("Mapper Error: {}", msg);
+            }
         }
 
         // add data into Sim table as well
         let mut sim_query = QueryBuilder::new(
             "INSERT INTO api_sim(sim_id, sim_serial, sim_number, qr_code, esim, active, subscribed, \
              use_fup_code, sent_email,
-             created, provider) VALUES (",
+             created, updated, provider) VALUES (",
         );
 
         sim_query
@@ -194,13 +199,14 @@ pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String
             .push(", ")
             .push_bind(now)
             .push(", ")
+            .push_bind(now)
+            .push(", ")
             .push_bind(&provider)
             .push(");");
 
         let sim_res = sim_query.build().fetch_optional(&pool).await;
         match sim_res {
-            Ok(row) => { 
-                tracing::info!("Added Sim {:?}", row);
+            Ok(_) => {
                 success += 1;
             },
             Err(msg) => {
@@ -209,7 +215,7 @@ pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String
             }
         }
     }
-    (success, errors)
+    (mapper_success, mapper_errors, success, errors)
 }
 
 
