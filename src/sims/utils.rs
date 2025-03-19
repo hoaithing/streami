@@ -27,8 +27,12 @@ impl DynamicFilters {
         if let Some(search) = &self.search {
             if !search.is_empty() {
                 if let Some(search_fields) = &self.search_fields {
-                    for field in search_fields {
-                        query_builder.push(format!(" AND {} ILIKE ", field));
+                    for (index, field) in search_fields.iter().enumerate() {
+                        if index == 0 {
+                            query_builder.push(format!(" AND {} ILIKE ", field));
+                        } else {
+                            query_builder.push(format!(" OR {} ILIKE ", field));
+                        }
                         query_builder.push_bind(format!("%{}%", search));
                     }
                 }
@@ -173,7 +177,7 @@ where
     ));
 
     // Debug: Print the SQL query
-    // warn!("Query SQL: {}", query_builder.sql());
+    warn!("Query SQL: {}", query_builder.sql());
     // Execute the query
     let rows = query_builder.build().fetch_all(&pool).await?;
 
