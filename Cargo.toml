@@ -5,11 +5,11 @@ edition = "2024"
 
 [dependencies]
 serde = { version = "1.0.219", features = ["derive"] }
-axum = { version = "0.8.1", features = ["multipart", "macros"] }
+axum = { version = "0.8.3", features = ["multipart", "macros"] }
 sqlx = { version = "0.8.3", features = ["postgres", "runtime-tokio", "chrono", "uuid"] }
 http = "1.3.1"
 tower-http = { version = "0.6.2", features = ["cors", "trace"] }
-tokio = { version = "1.44.1", features = ["full"] }
+tokio = { version = "1.44.2", features = ["full"] }
 sanitize-filename = "0.6.0"
 csv = "1.3.1"
 chrono = { version = "0.4.40", features = ["serde"] }
@@ -21,7 +21,7 @@ thiserror = "2.0.12"
 tracing-appender = {version = "0.2.3"}
 uuid = { version = "1.16.0", features = ["serde", "v4"] }
 calamine = {version = "0.26.1", features = ["default"]}
-tonic = "0.12.3"
+tonic = "0.13.0"
 prost = "0.13.5"
 tower = "0.5.2"
 
@@ -38,4 +38,4 @@ split-debuginfo = "unpacked" # Faster recompilation
 incremental = true
 
 [build-dependencies]
-tonic-build = "0.12.3"
+tonic-build = "0.13.0"
