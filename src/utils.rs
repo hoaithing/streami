@@ -87,7 +87,7 @@ pub async fn extract_data(
 
 
 #[derive(Debug, Deserialize)]
-pub struct CsvData {
+pub struct CSVData {
     pub imsi: Option<String>,
     pub iccid: String,
     pub msisdn: Option<String>,
@@ -95,7 +95,7 @@ pub struct CsvData {
 }
 
 
-impl Display for CsvData {
+impl Display for CSVData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -121,7 +121,7 @@ pub async fn save_csv_data_to_db(file_path: String, esim: bool, provider: String
         .from_reader(data.as_bytes());
     let records = rdr.deserialize();
     for result in records {
-        let record: CsvData = result.unwrap();
+        let record: CSVData = result.unwrap();
         let iccid = record.iccid.trim();
         tracing::info!("ROW: {}", record);
         if iccid == "iccid" {

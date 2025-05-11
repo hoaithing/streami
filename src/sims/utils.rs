@@ -77,7 +77,7 @@ impl DynamicFilters {
                                 for value in values {
                                     separated.push_bind(value.trim().to_string());
                                 }
-                                separated.push_unseparated(")");
+                                separated.push(")");
                             }
                         }
                         _ => {
